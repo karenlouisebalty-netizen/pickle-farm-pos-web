@@ -21,7 +21,7 @@ INSERT OR IGNORE INTO users (id, branch_id, full_name, email, pin_hash, role) VA
 INSERT OR IGNORE INTO users (id, branch_id, full_name, pin_hash, role) VALUES (
   'user-cashier-001',
   'branch-pf-001',
-  'Maria R.',
+  'Staff',
   'SETUP',
   'cashier'
 );

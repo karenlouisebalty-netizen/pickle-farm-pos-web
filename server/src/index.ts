@@ -13,6 +13,7 @@ import { memberRoutes } from './routes/members.routes'
 import { expenseRoutes } from './routes/expenses.routes'
 import { reportRoutes } from './routes/reports.routes'
 import { settingsRoutes } from './routes/settings.routes'
+import { attendanceRoutes } from './routes/attendance.routes'
 
 initDatabase()
 
@@ -20,7 +21,7 @@ const app = express()
 
 const corsOrigin = process.env.CORS_ORIGIN
 app.use(cors({ origin: corsOrigin ? corsOrigin.split(',') : true }))
-app.use(express.json())
+app.use(express.json({ limit: '5mb' })) // attendance clock-in photos are sent as base64 JSON
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
@@ -33,6 +34,7 @@ app.use('/api/members', memberRoutes)
 app.use('/api/expenses', expenseRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/settings', settingsRoutes)
+app.use('/api/attendance', attendanceRoutes)
 
 // In production, this server also serves the built React app so the whole
 // thing deploys as a single web service (one URL, no separate frontend host).

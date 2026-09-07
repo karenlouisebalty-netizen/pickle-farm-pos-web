@@ -21,6 +21,14 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+// Blocks cashiers from the Dashboard and Reports screens (revenue/income),
+// even via a direct URL — not just hiding the nav link.
+function ManagerOnly({ children }: { children: React.ReactNode }) {
+  const session = useSessionStore(s => s.session)
+  if (session?.role === 'cashier') return <Navigate to="/pos" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   const setSession = useSessionStore(s => s.setSession)
 
@@ -35,7 +43,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginScreen />} />
       <Route element={<AuthGuard><AppLayout /></AuthGuard>}>
-        <Route path="/"             element={<DashboardScreen />} />
+        <Route path="/"             element={<ManagerOnly><DashboardScreen /></ManagerOnly>} />
         <Route path="/pos"          element={<POSScreen />} />
         <Route path="/checkout"     element={<CheckoutScreen />} />
         <Route path="/receipt"      element={<ReceiptScreen />} />
@@ -44,7 +52,7 @@ export default function App() {
         <Route path="/members"             element={<MembersScreen />} />
         <Route path="/inventory"           element={<InventoryScreen />} />
         <Route path="/expenses"           element={<ExpensesScreen />} />
-        <Route path="/reports"      element={<ReportsScreen />} />
+        <Route path="/reports"      element={<ManagerOnly><ReportsScreen /></ManagerOnly>} />
         <Route path="/settings"     element={<ProductsScreen />} />
         <Route path="*"             element={<Navigate to="/" replace />} />
       </Route>

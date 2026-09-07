@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import { v4 as uuid } from 'uuid'
 import { getDb } from '../db/database'
 import { nowISO } from '../shared/utils'
 import type { Session, User, UserRole } from '../shared/types'
@@ -62,5 +63,26 @@ export const AuthService = {
     const db = getDb()
     const hash = await bcrypt.hash(newPin, 10)
     db.prepare('UPDATE users SET pin_hash = ?, updated_at = ? WHERE id = ?').run(hash, nowISO(), userId)
+  },
+
+  /** Add a new staff member. Always role 'cashier' — only one owner account.
+   *  Defaults to PIN 1234, same as first-run defaults; tell the owner to
+   *  pass that along (there's no change-PIN screen yet). */
+  async createStaff(branchId: string, fullName: string): Promise<User> {
+    const db = getDb()
+    const id = uuid()
+    const now = nowISO()
+    const hash = await bcrypt.hash('1234', 10)
+    db.prepare(`
+      INSERT INTO users (id, branch_id, full_name, pin_hash, role, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'cashier', 1, ?, ?)
+    `).run(id, branchId, fullName, hash, now, now)
+    return db.prepare('SELECT id, branch_id, full_name, email, role, is_active, last_login_at, created_at FROM users WHERE id=?').get(id) as User
+  },
+
+  /** Deactivate a staff member (soft delete) — keeps their sales/attendance history intact. */
+  deactivateStaff(userId: string): void {
+    const db = getDb()
+    db.prepare("UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?").run(nowISO(), userId)
   },
 }

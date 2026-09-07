@@ -39,12 +39,19 @@ export function AppLayout() {
   const navigate = useNavigate()
   const session = useSessionStore(s => s.session)
   const setSession = useSessionStore(s => s.setSession)
+  const isCashier = session?.role === 'cashier'
 
   async function handleLogout() {
     await window.electronAPI.logout()
     setSession(null)
     navigate('/login')
   }
+
+  // Cashiers don't see the Dashboard (revenue/income) or Reports —
+  // those stay manager/owner only. Settings stays visible either way.
+  const nav1 = isCashier ? NAV.filter(n => n.to !== '/') : NAV
+  const nav3 = isCashier ? NAV3.filter(n => n.to !== '/reports') : NAV3
+  const nav3HasReports = nav3.some(n => n.to === '/reports')
 
   return (
     <div className="flex h-screen bg-cream overflow-hidden">
@@ -56,13 +63,17 @@ export function AppLayout() {
         </div>
 
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          {NAV.map(n => <SideLink key={n.to} {...n} />)}
+          {nav1.map(n => <SideLink key={n.to} {...n} />)}
           <div className="h-px bg-white/10 my-2" />
           <div className="text-[10px] text-white/25 px-2.5 py-1 uppercase tracking-wider">Management</div>
           {NAV2.map(n => <SideLink key={n.to} {...n} />)}
-          <div className="h-px bg-white/10 my-2" />
-          <div className="text-[10px] text-white/25 px-2.5 py-1 uppercase tracking-wider">Reports</div>
-          {NAV3.map(n => <SideLink key={n.to} {...n} />)}
+          {nav3.length > 0 && (
+            <>
+              <div className="h-px bg-white/10 my-2" />
+              <div className="text-[10px] text-white/25 px-2.5 py-1 uppercase tracking-wider">{nav3HasReports ? 'Reports' : 'More'}</div>
+              {nav3.map(n => <SideLink key={n.to} {...n} />)}
+            </>
+          )}
         </nav>
 
         <div className="p-2 border-t border-white/10">

@@ -9,6 +9,8 @@ import type {
   CheckoutPayload, Transaction, Product, ProductCategory,
   Reservation, OpenPlayRegistration, Member, MembershipType,
   Expense, ExpenseSummary, DailySummary, Session, User,
+  InventoryCount, WasteEntry, WasteReason, ReconciliationRow,
+  AttendanceLog, AttendanceSummaryRow,
 } from '../shared/types'
 
 const TOKEN_KEY = 'pf_pos_token'
@@ -21,9 +23,9 @@ function setToken(token: string | null) {
   else localStorage.removeItem(TOKEN_KEY)
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, opts?: { overrideToken?: string }): Promise<T> {
   const headers: Record<string, string> = {}
-  const token = getToken()
+  const token = opts?.overrideToken ?? getToken()
   if (token) headers['Authorization'] = `Bearer ${token}`
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
@@ -33,7 +35,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
-  if (res.status === 401) {
+  // Only the real stored session redirects on 401 — a one-off verification
+  // call (e.g. checking the owner's PIN from the login screen) must not
+  // clear an unrelated session or bounce the page.
+  if (res.status === 401 && !opts?.overrideToken) {
     setToken(null)
     if (!location.pathname.startsWith('/login')) location.href = '/login'
   }
@@ -70,6 +75,15 @@ export const api = {
   stockOut: (productId: string, qty: number, reason?: string)                => request<void>('POST', '/inventory/stock-out', { productId, qty, reason }),
   listMovements: (productId: string) => request<any[]>('GET', `/inventory/movements/${productId}`),
   getLowStock:   (branchId: string)  => request<Product[]>('GET', `/inventory/low-stock${qs({ branchId })}`),
+
+  // ── Daily counts & waste ──
+  getInventoryCounts: (branchId: string, date: string) => request<InventoryCount[]>('GET', `/inventory/counts${qs({ branchId, date })}`),
+  submitInventoryCounts: (branchId: string, countDate: string, countType: 'start' | 'end', counts: Array<{ productId: string; quantity: number }>) =>
+    request<{ success: boolean }>('POST', '/inventory/counts/bulk', { branchId, countDate, countType, counts }),
+  getWasteLog: (branchId: string, date: string) => request<WasteEntry[]>('GET', `/inventory/waste${qs({ branchId, date })}`),
+  logWaste: (productId: string, quantity: number, reason: WasteReason, notes?: string, wasteDate?: string) =>
+    request<WasteEntry>('POST', '/inventory/waste', { productId, quantity, reason, notes, wasteDate }),
+  getReconciliation: (branchId: string, date: string) => request<ReconciliationRow[]>('GET', `/inventory/reconciliation${qs({ branchId, date })}`),
 
   // ── Reservations ──
   createReservation: (data: Omit<Reservation, 'id' | 'created_at'>) => request<Reservation>('POST', '/reservations', data),
@@ -111,6 +125,20 @@ export const api = {
     return request<Session>('GET', '/auth/session').catch(() => null)
   },
   listUsers: (branchId: string) => request<User[]>('GET', `/auth/users${qs({ branchId })}`),
+
+  // ── Attendance / Time Clock (staff sign in/out with a photo as proof) ──
+  getTodayAttendance: (branchId: string) => request<AttendanceLog[]>('GET', `/attendance/today${qs({ branchId })}`),
+  clockAttendance: (branchId: string, userId: string, clockType: 'in' | 'out', photo?: string) =>
+    request<AttendanceLog>('POST', '/attendance/clock', { branchId, userId, clockType, photo }),
+  getAttendanceSummary: (branchId: string, month: string, ownerToken: string) =>
+    request<AttendanceSummaryRow[]>('GET', `/attendance/summary${qs({ branchId, month })}`, undefined, { overrideToken: ownerToken }),
+
+  // ── Staff management (owner PIN required, verified inline without touching the real session) ──
+  verifyOwnerPin: (ownerId: string, pin: string) => request<{ session: Session; token: string }>('POST', '/auth/login', { userId: ownerId, pin }),
+  addStaff: (branchId: string, fullName: string, ownerToken: string) =>
+    request<User>('POST', '/auth/users', { branch_id: branchId, full_name: fullName }, { overrideToken: ownerToken }),
+  removeStaff: (userId: string, ownerToken: string) =>
+    request<{ success: boolean }>('PATCH', `/auth/users/${userId}/deactivate`, undefined, { overrideToken: ownerToken }),
 
   // ── Settings ──
   getSetting: (key: string) => request<{ value: string | null }>('GET', `/settings/${key}`).then(r => r.value),

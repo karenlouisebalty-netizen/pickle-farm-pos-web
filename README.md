@@ -41,10 +41,8 @@ pickle-farm-pos-web/
 
 ## Default login
 
-Same as the desktop app's first-run defaults:
-
-- **Owner** — PIN `1234`
-- **Maria R. (Cashier)** — PIN `1234`
+- **Owner** — PIN `082697`
+- **Staff (Cashier)** — PIN `1234`
 
 Change these PINs after your first login (there's no UI for it yet — ask me to add a
 "change PIN" screen if you want one, or I can update a PIN directly in the database for you).

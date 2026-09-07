@@ -206,6 +206,70 @@ export interface CheckoutPayload {
   notes?: string
 }
 
+export type WasteReason = 'spoiled' | 'expired' | 'damaged' | 'dropped' | 'other'
+
+export interface InventoryCount {
+  id: string
+  branch_id: string
+  product_id: string
+  user_id: string
+  user_name?: string
+  count_date: string
+  count_type: 'start' | 'end'
+  quantity: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WasteEntry {
+  id: string
+  branch_id: string
+  product_id: string
+  product_name?: string
+  user_id: string
+  user_name?: string
+  quantity: number
+  reason: WasteReason
+  notes?: string
+  unit_cost: number
+  total_cost: number
+  expense_id?: string
+  waste_date: string
+  created_at: string
+}
+
+export interface ReconciliationRow {
+  product_id: string
+  product_name: string
+  category: ProductCategory
+  start_qty: number | null
+  end_qty: number | null
+  sold_qty: number
+  wasted_qty: number
+  actual_used: number | null
+  expected_used: number
+  variance: number | null
+  status: 'pending' | 'ok' | 'variance'
+}
+
+export interface AttendanceLog {
+  id: string
+  branch_id: string
+  user_id: string
+  user_name?: string
+  clock_type: 'in' | 'out'
+  photo?: string | null
+  captured_at: string
+}
+
+export interface AttendanceSummaryRow {
+  user_id: string
+  full_name: string
+  days_present: number
+  total_hours: number
+  days: Array<{ date: string; hours: number }>
+}
+
 export interface DailySummary {
   date: string
   total_revenue: number

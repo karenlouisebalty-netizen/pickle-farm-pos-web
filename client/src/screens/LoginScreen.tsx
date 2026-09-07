@@ -2,19 +2,22 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionStore } from '../stores/sessionStore'
 import type { User } from '../shared/types'
+import { TimeClockPanel } from './TimeClockPanel'
 
 export function LoginScreen() {
   const navigate = useNavigate()
   const setSession = useSessionStore(s => s.setSession)
+  const [tab, setTab] = useState<'signin' | 'timeclock'>('signin')
   const [users, setUsers] = useState<User[]>([])
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [pin, setPin] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
+  function refreshUsers() {
     window.electronAPI.listUsers('branch-pf-001').then(setUsers)
-  }, [])
+  }
+  useEffect(() => { refreshUsers() }, [])
 
   function pressKey(key: string) {
     if (key === 'del') { setPin(p => p.slice(0, -1)); return }
@@ -29,7 +32,8 @@ export function LoginScreen() {
     try {
       const session = await window.electronAPI.login(selectedUser.id, pin)
       setSession(session)
-      navigate('/')
+      // Cashiers land on POS directly — the Dashboard (revenue/income) is manager/owner only.
+      navigate(session.role === 'cashier' ? '/pos' : '/')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Login failed')
       setPin('')
@@ -49,6 +53,25 @@ export function LoginScreen() {
         <p className="text-sm text-gray-500 mt-1">Point of Sale — Indang, Cavite</p>
       </div>
 
+      {/* Tab switcher: Sign In (PIN pad) vs Time Clock (staff attendance) */}
+      <div className="flex gap-1 bg-surface border border-border rounded-lg p-1 w-full max-w-sm">
+        <button
+          onClick={() => { setTab('signin'); setSelectedUser(null); setPin(''); setError('') }}
+          className={`flex-1 h-9 rounded-md text-sm font-medium transition-colors ${tab === 'signin' ? 'bg-white text-dg shadow-sm' : 'text-gray-500 hover:text-dg'}`}
+        >
+          Sign In
+        </button>
+        <button
+          onClick={() => setTab('timeclock')}
+          className={`flex-1 h-9 rounded-md text-sm font-medium transition-colors ${tab === 'timeclock' ? 'bg-white text-dg shadow-sm' : 'text-gray-500 hover:text-dg'}`}
+        >
+          Time Clock
+        </button>
+      </div>
+
+      {tab === 'timeclock' ? (
+        <TimeClockPanel users={users} onStaffChanged={refreshUsers} />
+      ) : (
       <div className="bg-white rounded-xl shadow-card border border-border p-6 w-full max-w-sm">
         {/* User selector */}
         {!selectedUser ? (
@@ -117,6 +140,7 @@ export function LoginScreen() {
           </>
         )}
       </div>
+      )}
 
       <p className="text-xs text-gray-400">The Pickle Farm POS v1.0 — Offline ready</p>
     </div>
