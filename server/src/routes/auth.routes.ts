@@ -40,3 +40,13 @@ authRoutes.patch('/users/:id/deactivate', requireAuth, requireRole('owner'), (re
   AuthService.deactivateStaff(req.params.id)
   res.json({ success: true })
 })
+
+// Owner only — reset a staff member's PIN when they request it.
+authRoutes.patch('/users/:id/pin', requireAuth, requireRole('owner'), async (req, res) => {
+  const { pin } = req.body as { pin: string }
+  if (!pin || !/^\d{4,6}$/.test(pin)) {
+    return res.status(400).json({ error: 'PIN must be 4-6 digits' })
+  }
+  await AuthService.changePin(req.params.id, pin)
+  res.json({ success: true })
+})

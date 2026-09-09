@@ -144,6 +144,10 @@ export const api = {
     request<User>('POST', '/auth/users', { branch_id: branchId, full_name: fullName }, { overrideToken: ownerToken }),
   removeStaff: (userId: string, ownerToken: string) =>
     request<{ success: boolean }>('PATCH', `/auth/users/${userId}/deactivate`, undefined, { overrideToken: ownerToken }),
+  // ownerToken is optional here too — omitted when called from an already-authenticated
+  // owner session (e.g. the Attendance screen), passed when called pre-auth.
+  changeStaffPin: (userId: string, pin: string, ownerToken?: string) =>
+    request<{ success: boolean }>('PATCH', `/auth/users/${userId}/pin`, { pin }, ownerToken ? { overrideToken: ownerToken } : undefined),
 
   // ── Settings ──
   getSetting: (key: string) => request<{ value: string | null }>('GET', `/settings/${key}`).then(r => r.value),
