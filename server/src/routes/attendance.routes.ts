@@ -44,6 +44,21 @@ attendanceRoutes.post('/clock', (req, res) => {
   `).get(id))
 })
 
+// Owner only — the full clock-in/out log with photos, for the Attendance tab.
+attendanceRoutes.get('/logs', requireAuth, requireRole('owner'), (req, res) => {
+  const db = getDb()
+  const { branchId, month } = req.query as { branchId: string; month: string } // month = YYYY-MM
+  if (!branchId || !month) return res.status(400).json({ error: 'branchId and month are required' })
+
+  res.json(db.prepare(`
+    SELECT a.*, u.full_name as user_name
+    FROM attendance_logs a
+    JOIN users u ON u.id = a.user_id
+    WHERE a.branch_id = ? AND strftime('%Y-%m', a.captured_at) = ?
+    ORDER BY a.captured_at DESC
+  `).all(branchId, month))
+})
+
 // Owner only — this is the payroll view.
 attendanceRoutes.get('/summary', requireAuth, requireRole('owner'), (req, res) => {
   const db = getDb()

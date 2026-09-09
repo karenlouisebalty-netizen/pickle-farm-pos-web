@@ -16,6 +16,7 @@ const NAV2 = [
 
 const NAV3 = [
   { to: '/reports',     icon: 'ti-chart-bar',      label: 'Reports'      },
+  { to: '/attendance',  icon: 'ti-camera',         label: 'Attendance'   },
   { to: '/settings',    icon: 'ti-settings',       label: 'Settings'     },
 ]
 
@@ -40,6 +41,7 @@ export function AppLayout() {
   const session = useSessionStore(s => s.session)
   const setSession = useSessionStore(s => s.setSession)
   const isCashier = session?.role === 'cashier'
+  const isOwner = session?.role === 'owner'
 
   async function handleLogout() {
     await window.electronAPI.logout()
@@ -48,9 +50,14 @@ export function AppLayout() {
   }
 
   // Cashiers don't see the Dashboard (revenue/income) or Reports —
-  // those stay manager/owner only. Settings stays visible either way.
+  // those stay manager/owner only. Attendance (staff photos + payroll
+  // hours) is owner only. Settings stays visible either way.
   const nav1 = isCashier ? NAV.filter(n => n.to !== '/') : NAV
-  const nav3 = isCashier ? NAV3.filter(n => n.to !== '/reports') : NAV3
+  const nav3 = NAV3.filter(n => {
+    if (n.to === '/reports') return !isCashier
+    if (n.to === '/attendance') return isOwner
+    return true
+  })
   const nav3HasReports = nav3.some(n => n.to === '/reports')
 
   return (

@@ -130,8 +130,13 @@ export const api = {
   getTodayAttendance: (branchId: string) => request<AttendanceLog[]>('GET', `/attendance/today${qs({ branchId })}`),
   clockAttendance: (branchId: string, userId: string, clockType: 'in' | 'out', photo?: string) =>
     request<AttendanceLog>('POST', '/attendance/clock', { branchId, userId, clockType, photo }),
-  getAttendanceSummary: (branchId: string, month: string, ownerToken: string) =>
-    request<AttendanceSummaryRow[]>('GET', `/attendance/summary${qs({ branchId, month })}`, undefined, { overrideToken: ownerToken }),
+  // ownerToken is only needed when called pre-auth (the Login screen's Time Clock tab, after a
+  // PIN check there). From inside the app the owner is already signed in, so it's omitted and
+  // the normal stored session token is used instead.
+  getAttendanceSummary: (branchId: string, month: string, ownerToken?: string) =>
+    request<AttendanceSummaryRow[]>('GET', `/attendance/summary${qs({ branchId, month })}`, undefined, ownerToken ? { overrideToken: ownerToken } : undefined),
+  getAttendanceLogs: (branchId: string, month: string) =>
+    request<AttendanceLog[]>('GET', `/attendance/logs${qs({ branchId, month })}`),
 
   // ── Staff management (owner PIN required, verified inline without touching the real session) ──
   verifyOwnerPin: (ownerId: string, pin: string) => request<{ session: Session; token: string }>('POST', '/auth/login', { userId: ownerId, pin }),

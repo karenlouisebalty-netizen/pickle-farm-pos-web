@@ -14,6 +14,7 @@ import { useSessionStore } from './stores/sessionStore'
 import { InventoryScreen } from './screens/InventoryScreen'
 import { ExpensesScreen } from './screens/ExpensesScreen'
 import { MembersScreen } from './screens/MembersScreen'
+import { AttendanceScreen } from './screens/AttendanceScreen'
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useSessionStore(s => s.isAuthenticated)()
@@ -26,6 +27,13 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 function ManagerOnly({ children }: { children: React.ReactNode }) {
   const session = useSessionStore(s => s.session)
   if (session?.role === 'cashier') return <Navigate to="/pos" replace />
+  return <>{children}</>
+}
+
+// Staff photos and payroll hours are owner-only, even via a direct URL.
+function OwnerOnly({ children }: { children: React.ReactNode }) {
+  const session = useSessionStore(s => s.session)
+  if (session?.role !== 'owner') return <Navigate to="/pos" replace />
   return <>{children}</>
 }
 
@@ -53,6 +61,7 @@ export default function App() {
         <Route path="/inventory"           element={<InventoryScreen />} />
         <Route path="/expenses"           element={<ExpensesScreen />} />
         <Route path="/reports"      element={<ManagerOnly><ReportsScreen /></ManagerOnly>} />
+        <Route path="/attendance"   element={<OwnerOnly><AttendanceScreen /></OwnerOnly>} />
         <Route path="/settings"     element={<ProductsScreen />} />
         <Route path="*"             element={<Navigate to="/" replace />} />
       </Route>
