@@ -15,14 +15,15 @@ function exportCSV(date, summary, transactions){
     ['Court Rentals',summary?.court_rental_count||0],
     ['Discounts',summary?.discount_total||0],
     [],
-    ['Transaction ID','Time','Items','Payment','Amount','Discount'],
+    ['Transaction ID','Time','Items','Payment','Status','Amount','Discount'],
     ...transactions.map(t=>[
       t.id.slice(0,8),
       fmtTime(t.created_at),
       (t.items||[]).map(i=>i.item_name+'x'+i.quantity).join('; '),
       t.payments?.[0]?.payment_method||'',
-      t.total_amount,
-      t.discount_amount||0
+      t.status,
+      t.total,
+      t.discount_total||0
     ])
   ]
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n')
@@ -35,6 +36,97 @@ function exportCSV(date, summary, transactions){
   URL.revokeObjectURL(url)
 }
 
+// Voiding needs the owner's PIN, checked right here without touching whoever's actually
+// signed in — same inline-verification pattern used for staff PINs and Time Clock actions.
+function OwnerPinModal({owner,onClose,onVerified}){
+  const [pin,setPin]=useState('')
+  const [error,setError]=useState('')
+  const [loading,setLoading]=useState(false)
+
+  async function submit(){
+    if(pin.length<4)return
+    setLoading(true);setError('')
+    try{
+      const {token}=await window.electronAPI.verifyOwnerPin(owner.id,pin)
+      onVerified(token)
+    }catch{
+      setError('Incorrect owner PIN.')
+      setPin('')
+    }finally{setLoading(false)}
+  }
+
+  return (
+    <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50'>
+      <div className='bg-white rounded-2xl shadow-xl w-full max-w-xs mx-4 p-6'>
+        <div className='flex items-center justify-between mb-1'>
+          <h2 className='text-base font-medium text-dg'>Void Transaction</h2>
+          <button onClick={onClose} className='text-gray-400 hover:text-gray-600'><i className='ti ti-x'/></button>
+        </div>
+        <p className='text-xs text-gray-500 mb-4'>Owner PIN required.</p>
+        <input
+          type='password' inputMode='numeric' autoFocus
+          value={pin}
+          onChange={e=>setPin(e.target.value.replace(/\D/g,'').slice(0,6))}
+          onKeyDown={e=>e.key==='Enter'&&submit()}
+          className='w-full border border-border rounded-lg px-3 py-2 text-center text-lg tracking-widest mb-2 focus:outline-none focus:ring-2 focus:ring-olive'
+          placeholder='••••••'
+        />
+        {error&&<div className='text-red-600 text-xs mb-2 text-center'>{error}</div>}
+        <button onClick={submit} disabled={pin.length<4||loading}
+          className='w-full h-11 rounded-lg bg-dg text-white font-semibold hover:bg-dg-light transition-colors disabled:opacity-40'>
+          {loading?'...':'Continue'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function VoidConfirmModal({txn,ownerToken,onClose,onDone}){
+  const [reason,setReason]=useState('')
+  const [error,setError]=useState('')
+  const [loading,setLoading]=useState(false)
+  const hasCourtItem=(txn.items||[]).some(i=>i.notes&&i.notes.startsWith('{"court"'))
+
+  async function confirm(){
+    setLoading(true);setError('')
+    try{
+      await window.electronAPI.voidTxn(txn.id,reason||undefined,ownerToken)
+      onDone()
+    }catch(e){
+      setError(e instanceof Error?e.message:'Void failed')
+    }finally{setLoading(false)}
+  }
+
+  return (
+    <div className='fixed inset-0 bg-black/40 flex items-center justify-center z-50'>
+      <div className='bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6'>
+        <div className='flex items-center justify-between mb-4'>
+          <h2 className='text-base font-medium text-dg'>Void this transaction?</h2>
+          <button onClick={onClose} className='text-gray-400 hover:text-gray-600'><i className='ti ti-x'/></button>
+        </div>
+        <div className='bg-surface rounded-lg p-3 mb-3 text-sm'>
+          <div className='flex justify-between'><span className='text-gray-500'>Amount</span><span className='font-medium text-dg'>{formatPeso(txn.total)}</span></div>
+          <div className='text-xs text-gray-400 mt-1'>{(txn.items||[]).map(i=>i.item_name).join(', ')}</div>
+        </div>
+        <p className='text-xs text-gray-500 mb-3'>
+          This removes it from today's revenue and reports{hasCourtItem?', and cancels the court booking it made (freeing that slot on the public calendar)':''}. This can't be undone.
+        </p>
+        <label className='text-xs text-gray-500 mb-1 block'>Reason (optional)</label>
+        <input
+          value={reason} onChange={e=>setReason(e.target.value)}
+          className='w-full border border-border rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-olive'
+          placeholder='e.g. rang up by mistake'
+        />
+        {error&&<div className='text-red-600 text-xs mb-2'>{error}</div>}
+        <button onClick={confirm} disabled={loading}
+          className='w-full h-11 rounded-lg bg-maroon text-white font-semibold hover:opacity-90 transition-colors disabled:opacity-40'>
+          {loading?'Voiding...':'Void Transaction'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function ReportsScreen(){
   const session=useSessionStore(s=>s.session)
   const [date,setDate]=useState(new Date().toISOString().slice(0,10))
@@ -42,6 +134,10 @@ export function ReportsScreen(){
   const [transactions,setTransactions]=useState([])
   const [loading,setLoading]=useState(false)
   const [expanded,setExpanded]=useState(null)
+  const [owner,setOwner]=useState(null)
+  const [voidTarget,setVoidTarget]=useState(null)
+  const [voidStage,setVoidStage]=useState(null) // 'pin' | 'confirm'
+  const [ownerToken,setOwnerToken]=useState(null)
 
   async function load(d){
     if(!session)return
@@ -57,6 +153,25 @@ export function ReportsScreen(){
   }
 
   useEffect(()=>{load(date)},[session,date])
+  useEffect(()=>{
+    if(!session)return
+    window.electronAPI.listUsers(session.branch_id).then(users=>setOwner(users.find(u=>u.role==='owner')||null))
+  },[session])
+
+  function openVoid(t){
+    setVoidTarget(t)
+    setVoidStage('pin')
+    setOwnerToken(null)
+  }
+  function closeVoid(){
+    setVoidTarget(null)
+    setVoidStage(null)
+    setOwnerToken(null)
+  }
+  function voidDone(){
+    closeVoid()
+    load(date)
+  }
 
   const isToday=date===new Date().toISOString().slice(0,10)
 
@@ -111,11 +226,13 @@ export function ReportsScreen(){
                       <span className='text-xs font-mono text-gray-400'>{t.id.slice(0,8)}</span>
                       <span className='text-xs text-gray-500'>{fmtTime(t.created_at)}</span>
                       {t.customer_name&&<span className='text-xs bg-surface px-1.5 py-0.5 rounded text-gray-600'>{t.customer_name}</span>}
+                      {t.status==='voided'&&<span className='text-[10px] font-medium bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full'>VOIDED</span>}
+                      {t.status==='refunded'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>REFUNDED</span>}
                     </div>
                     <div className='text-xs text-gray-400 mt-0.5'>{(t.items||[]).slice(0,3).map(i=>i.item_name).join(', ')}{(t.items||[]).length>3?'...':''}</div>
                   </div>
                   <div className='text-right'>
-                    <div className='text-sm font-medium text-dg'>{formatPeso(t.total_amount)}</div>
+                    <div className={'text-sm font-medium '+(t.status==='voided'?'text-gray-400 line-through':'text-dg')}>{formatPeso(t.total)}</div>
                     <div className='text-xs text-gray-400'>{t.payments?.[0]?.payment_method||'cash'}</div>
                   </div>
                   <i className={'ti text-gray-400 '+(expanded===t.id?'ti-chevron-up':'ti-chevron-down')}/>
@@ -139,19 +256,33 @@ export function ReportsScreen(){
                       <div className='space-y-0.5'>
                         <div className='text-gray-500'>Payment: <span className='font-medium text-dg'>{t.payments?.[0]?.payment_method}</span></div>
                         {t.payments?.[0]?.change_given>0&&<div className='text-gray-500'>Change: <span className='font-medium'>{formatPeso(t.payments[0].change_given)}</span></div>}
-                        {t.discount_amount>0&&<div className='text-gray-500'>Discount: <span className='font-medium text-maroon'>-{formatPeso(t.discount_amount)}</span></div>}
+                        {t.discount_total>0&&<div className='text-gray-500'>Discount: <span className='font-medium text-maroon'>-{formatPeso(t.discount_total)}</span></div>}
+                        {t.status!=='completed'&&t.notes&&<div className='text-gray-500'>{t.notes}</div>}
                       </div>
                       <div className='text-right'>
                         <div className='text-gray-500'>Total</div>
-                        <div className='text-base font-bold text-dg'>{formatPeso(t.total_amount)}</div>
+                        <div className='text-base font-bold text-dg'>{formatPeso(t.total)}</div>
                       </div>
                     </div>
+                    {t.status==='completed'&&(
+                      <div className='mt-2 pt-2 border-t border-border flex justify-end'>
+                        <button onClick={(e)=>{e.stopPropagation();openVoid(t)}} className='text-xs font-medium text-maroon border border-maroon/30 rounded-lg px-3 py-1.5 hover:bg-red-50 transition-colors'>
+                          <i className='ti ti-ban mr-1'/>Void Transaction
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             ))}
           </div>
         </div>
+      )}
+      {voidTarget&&voidStage==='pin'&&owner&&(
+        <OwnerPinModal owner={owner} onClose={closeVoid} onVerified={(token)=>{setOwnerToken(token);setVoidStage('confirm')}}/>
+      )}
+      {voidTarget&&voidStage==='confirm'&&ownerToken&&(
+        <VoidConfirmModal txn={voidTarget} ownerToken={ownerToken} onClose={closeVoid} onDone={voidDone}/>
       )}
     </div>
   )

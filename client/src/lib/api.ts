@@ -63,7 +63,10 @@ export const api = {
   // ── POS ──
   checkout:         (payload: CheckoutPayload)        => request<Transaction>('POST', '/pos/checkout', payload),
   refund:           (txnId: string, reason: string)   => request<Transaction>('POST', `/pos/transactions/${txnId}/refund`, { reason }),
-  voidTxn:          (txnId: string)                   => request<Transaction>('POST', `/pos/transactions/${txnId}/void`),
+  // Owner PIN required — ownerToken comes from verifyOwnerPin, same inline-verification
+  // pattern used elsewhere, so voiding never needs the actual owner to be signed in.
+  voidTxn:          (txnId: string, reason: string | undefined, ownerToken: string) =>
+    request<Transaction>('POST', `/pos/transactions/${txnId}/void`, { reason }, { overrideToken: ownerToken }),
   getProducts:      (branchId: string)                => request<Product[]>('GET', `/pos/products${qs({ branchId })}`),
   updateProduct:    (id: string, updates: { name?: string; price?: number }) => request<Product>('PATCH', `/pos/products/${id}`, updates),
   createProduct:    (data: { branch_id: string; name: string; category: ProductCategory; price: number; track_inventory: boolean; stock_qty?: number; low_stock_threshold?: number; sku?: string }) => request<Product>('POST', '/pos/products', data),

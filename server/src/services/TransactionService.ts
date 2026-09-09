@@ -107,10 +107,40 @@ export const TransactionService = {
     return TransactionService.getById(txnId)!
   },
 
-  /** Void a transaction (manager/owner only) */
-  void(txnId: string): Transaction {
+  /** Void a transaction — owner PIN required (checked at the route level). Fully undoes the
+   *  sale as if it never happened: excluded from revenue/reports (they already filter on
+   *  status='completed'), any inventory it took out is put back, and — if it included a court
+   *  rental — the reservation it created is cancelled, freeing that slot on the public calendar. */
+  void(txnId: string, ownerId: string, reason?: string): Transaction {
     const db = getDb()
-    db.prepare("UPDATE transactions SET status='voided', updated_at=? WHERE id=?").run(nowISO(), txnId)
+    const now = nowISO()
+
+    const txn = TransactionService.getById(txnId)
+    if (!txn) throw new Error('Transaction not found')
+    if (txn.status !== 'completed') throw new Error(`This transaction is already ${txn.status} — only completed transactions can be voided.`)
+
+    db.transaction(() => {
+      db.prepare("UPDATE transactions SET status='voided', notes=?, updated_at=? WHERE id=?")
+        .run(reason ? `Voided: ${reason}` : 'Voided', now, txnId)
+
+      for (const item of txn.items) {
+        if (!item.product_id) continue
+        const product = db.prepare('SELECT stock_qty, track_inventory FROM products WHERE id=?').get(item.product_id) as { stock_qty: number; track_inventory: number } | undefined
+        if (!product?.track_inventory) continue
+
+        const newQty = product.stock_qty + item.quantity
+        db.prepare('UPDATE products SET stock_qty=?, updated_at=? WHERE id=?').run(newQty, now, item.product_id)
+        db.prepare(`
+          INSERT INTO inventory_movements
+            (id, product_id, user_id, movement_type, quantity, stock_before, stock_after, reference_id, reason, created_at)
+          VALUES (?, ?, ?, 'adjustment', ?, ?, ?, ?, ?, ?)
+        `).run(uuid(), item.product_id, ownerId, item.quantity, product.stock_qty, newQty, txnId, 'Voided transaction', now)
+      }
+
+      // Free up the court(s) this transaction booked, if any.
+      db.prepare("UPDATE reservations SET status='cancelled' WHERE transaction_id=? AND status!='cancelled'").run(txnId)
+    })()
+
     return TransactionService.getById(txnId)!
   },
 

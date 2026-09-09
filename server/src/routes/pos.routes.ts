@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { v4 as uuid } from 'uuid'
 import { getDb } from '../db/database'
 import { TransactionService } from '../services/TransactionService'
-import { requireAuth } from '../middleware/auth'
+import { requireAuth, requireRole } from '../middleware/auth'
 import type { CheckoutPayload } from '../shared/types'
 
 export const posRoutes = Router()
@@ -27,9 +27,14 @@ posRoutes.post('/transactions/:id/refund', requireAuth, (req, res) => {
   }
 })
 
-posRoutes.post('/transactions/:id/void', requireAuth, (req, res) => {
+// Owner only — voiding removes the sale from revenue/reports, restocks any inventory it
+// took out, and cancels any court reservation it created (frees the slot on the public
+// calendar). requireRole('owner') here means the caller must actually hold an owner
+// session — the client gets one by verifying the owner's PIN inline before calling this.
+posRoutes.post('/transactions/:id/void', requireAuth, requireRole('owner'), (req, res) => {
   try {
-    const txn = TransactionService.void(req.params.id)
+    const { reason } = req.body as { reason?: string }
+    const txn = TransactionService.void(req.params.id, req.session!.user_id, reason)
     res.json(txn)
   } catch (e: any) {
     res.status(400).json({ error: e.message || 'Void failed' })
