@@ -15,6 +15,7 @@ import { InventoryScreen } from './screens/InventoryScreen'
 import { ExpensesScreen } from './screens/ExpensesScreen'
 import { MembersScreen } from './screens/MembersScreen'
 import { AttendanceScreen } from './screens/AttendanceScreen'
+import { PublicAvailabilityScreen } from './screens/PublicAvailabilityScreen'
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useSessionStore(s => s.isAuthenticated)()
@@ -50,6 +51,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginScreen />} />
+      {/* Public, no login needed — the shareable court-availability link. */}
+      <Route path="/availability" element={<PublicAvailabilityScreen />} />
       <Route element={<AuthGuard><AppLayout /></AuthGuard>}>
         <Route path="/"             element={<ManagerOnly><DashboardScreen /></ManagerOnly>} />
         <Route path="/pos"          element={<POSScreen />} />

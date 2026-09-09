@@ -14,6 +14,7 @@ import { expenseRoutes } from './routes/expenses.routes'
 import { reportRoutes } from './routes/reports.routes'
 import { settingsRoutes } from './routes/settings.routes'
 import { attendanceRoutes } from './routes/attendance.routes'
+import { publicRoutes } from './routes/public.routes'
 
 initDatabase()
 
@@ -35,6 +36,7 @@ app.use('/api/expenses', expenseRoutes)
 app.use('/api/reports', reportRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/attendance', attendanceRoutes)
+app.use('/api/public', publicRoutes)
 
 // In production, this server also serves the built React app so the whole
 // thing deploys as a single web service (one URL, no separate frontend host).
