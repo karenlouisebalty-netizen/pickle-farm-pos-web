@@ -123,13 +123,13 @@ export function DashboardScreen() {
 
   return (
     <div className="h-full overflow-y-auto bg-cream">
-      <div className="sticky top-0 bg-cream border-b border-border px-6 py-3 flex items-center justify-between">
+      <div className="sticky top-0 bg-cream border-b border-border px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-lg font-medium text-dg">{greeting}, {session?.full_name}</h1>
           <p className="text-xs text-gray-500 mt-0.5">{new Date().toLocaleDateString("en-PH", {weekday:"long",year:"numeric",month:"long",day:"numeric"})} · {session?.branch_name}</p>
         </div>
-        <div className="flex gap-2 items-center">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex rounded-lg border border-border overflow-hidden text-xs">
               {(['today','week','month','custom'] as const).map(r => (
                 <button
@@ -167,8 +167,8 @@ export function DashboardScreen() {
           </button>
         </div>
       </div>
-      <div className="p-6 space-y-4">
-        <div className="grid grid-cols-3 gap-3">
+      <div className="p-4 sm:p-6 space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
           <MetricCard accent icon="ti-currency-peso" label={`Revenue (${rangeLabel})`} value={fmt(summary?.total_revenue)} sub={`${summary?.transaction_count || 0} transactions`} />
           <MetricCard icon="ti-receipt" label="Transactions" value={String(summary?.transaction_count || 0)} sub={`Completed ${rangeLabel}`} />
           <MetricCard icon="ti-run" label="Open play" value={String(summary?.open_play_count || 0)} sub={`Players ${rangeLabel}`} />
@@ -178,7 +178,7 @@ export function DashboardScreen() {
           <MetricCard icon="ti-trending-down" label="Total expenses" value={fmt(expenseSummary.total)} sub={`${rangeLabel}`} />
           <MetricCard accent icon="ti-coin" label="Net profit" value={fmt((summary?.total_revenue||0) - expenseSummary.total)} sub={`Revenue minus expenses`} />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white rounded-xl border border-border p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-sm font-medium text-dg">Recent transactions</span>
@@ -228,7 +228,7 @@ export function DashboardScreen() {
             </button>
           </div>
           {expenseSummary.byCategory.length > 0 && (
-            <div className="grid grid-cols-4 gap-2 mb-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
               {expenseSummary.byCategory.map((c:any) => (
                 <div key={c.category} className="bg-surface rounded-lg p-2 text-center">
                   <div className="text-xs font-medium text-dg">{fmt(c.total)}</div>
@@ -301,7 +301,7 @@ export function DashboardScreen() {
         {summary && summary.total_revenue > 0 && (
           <div className="bg-white rounded-xl border border-border p-4">
             <div className="text-sm font-medium text-dg mb-3">Payment breakdown</div>
-            <div className="grid grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {Object.entries(summary.payment_breakdown).filter(([,v]) => v > 0).map(([method, amt]) => (
                 <div key={method} className="text-center">
                   <div className="text-sm font-medium text-dg">{fmt(amt)}</div>

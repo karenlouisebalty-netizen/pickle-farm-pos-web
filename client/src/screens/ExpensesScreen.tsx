@@ -145,7 +145,7 @@ export function ExpensesScreen() {
         />
       )}
 
-      <div className="sticky top-0 bg-cream border-b border-border px-6 py-3 flex items-center justify-between z-10">
+      <div className="sticky top-0 bg-cream border-b border-border px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2 z-10">
         <div>
           <h1 className="text-lg font-medium text-dg">Expenses</h1>
           <p className="text-xs text-gray-500 mt-0.5">{expenses.length} entries · {session?.branch_name}</p>
@@ -168,12 +168,12 @@ export function ExpensesScreen() {
           <button onClick={resetToThisMonth} className="px-3 py-1.5 rounded-lg border border-border bg-white text-xs text-gray-600 hover:bg-surface">This month</button>
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
-          <div className="rounded-xl p-4 border bg-white border-border col-span-1">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div className="rounded-xl p-4 border bg-white border-border sm:col-span-1">
             <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1"><i className="ti ti-receipt-2 text-sm" />Total expenses</div>
             <div className="text-2xl font-medium text-dg">{formatPeso(summary?.total || 0)}</div>
           </div>
-          <div className="rounded-xl p-4 border bg-white border-border col-span-3">
+          <div className="rounded-xl p-4 border bg-white border-border sm:col-span-3">
             <div className="text-xs text-gray-500 mb-2">By category</div>
             {(!summary || summary.byCategory.length === 0) ? (
               <div className="text-xs text-gray-400">No expenses in this range</div>
@@ -190,8 +190,8 @@ export function ExpensesScreen() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-xl border border-border overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-border bg-surface">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Date</th>

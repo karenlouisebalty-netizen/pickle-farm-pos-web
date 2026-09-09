@@ -90,7 +90,7 @@ export function ReservationsScreen(){
 
   return (
     <div className='h-full overflow-y-auto bg-cream'>
-      <div className='sticky top-0 bg-cream border-b border-border px-5 py-3 flex items-center justify-between z-10'>
+      <div className='sticky top-0 bg-cream border-b border-border px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2 z-10'>
         <div className='flex items-center gap-3'>
           <h1 className='text-lg font-medium text-dg'>Reservations</h1>
           <div className='flex rounded-lg border border-border overflow-hidden'>
@@ -98,7 +98,7 @@ export function ReservationsScreen(){
             <button onClick={()=>setView('week')} className={'px-3 py-1.5 text-xs font-medium '+(view==='week'?'bg-dg text-white':'bg-white text-gray-600')}>Week</button>
           </div>
         </div>
-        <div className='flex items-center gap-2'>
+        <div className='flex items-center gap-2 flex-wrap'>
           <button onClick={()=>setDate(d=>addDays(d,-1))} className='px-2 py-1.5 rounded-lg border border-border bg-white text-gray-600 text-sm'>‹</button>
           <input type='date' value={date} onChange={e=>setDate(e.target.value)} className='px-3 py-1.5 rounded-lg border border-border text-sm outline-none'/>
           <button onClick={()=>setDate(d=>addDays(d,1))} className='px-2 py-1.5 rounded-lg border border-border bg-white text-gray-600 text-sm'>›</button>
@@ -141,7 +141,7 @@ export function ReservationsScreen(){
                           </div>
                         )}
                         {booking&&!isStart&&<div className='h-full bg-dg/10 rounded'/>}
-                        {isFree&&<div className='h-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity'><span className='text-xs text-olive'>+ Book</span></div>}
+                        {isFree&&<div className='h-full flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity'><span className='text-xs text-olive'>+ Book</span></div>}
                       </div>
                     )
                   })}
@@ -154,7 +154,8 @@ export function ReservationsScreen(){
 
       {view==='week'&&(
         <div className='p-4'>
-          <div className='bg-white rounded-xl border border-border overflow-hidden'>
+          <div className='bg-white rounded-xl border border-border overflow-x-auto'>
+            <div className='min-w-[720px]'>
             <div className='grid border-b border-border' style={{gridTemplateColumns:'80px repeat(7, 1fr)'}}>
               <div className='p-3 text-xs text-gray-400'>Court</div>
               {weekDates.map(d=>(
@@ -183,6 +184,7 @@ export function ReservationsScreen(){
                 })}
               </div>
             ))}
+            </div>
           </div>
         </div>
       )}

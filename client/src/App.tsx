@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { AppLayout } from './components/layout/AppLayout'
 import { ReportsScreen } from './screens/ReportsScreen'
@@ -18,8 +18,15 @@ import { AttendanceScreen } from './screens/AttendanceScreen'
 import { PublicAvailabilityScreen } from './screens/PublicAvailabilityScreen'
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useSessionStore(s => s.isAuthenticated)()
-  if (!isAuthenticated) return <Navigate to="/login" replace />
+  // Select `session` itself, not the isAuthenticated() function — a selector that always
+  // returns the same function reference never re-renders this component when the session
+  // changes, so a page that loads with a valid token would flash to /login and get stuck
+  // there even after the session finished restoring. Matters a lot more on iPad than laptop,
+  // since Safari reloads backgrounded tabs far more aggressively (switching apps, screen
+  // lock, etc.) — every one of those reloads was silently bouncing a signed-in staff member
+  // back to the login screen.
+  const session = useSessionStore(s => s.session)
+  if (!session) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
@@ -40,13 +47,21 @@ function OwnerOnly({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const setSession = useSessionStore(s => s.setSession)
+  const [checkedSession, setCheckedSession] = useState(false)
 
-  // Restore session on reload
+  // Restore session on reload. Wait for this to finish before deciding whether to show
+  // /login — otherwise a signed-in user reloading the page (common on iPad, where Safari
+  // reloads backgrounded tabs far more often than a laptop browser does) gets redirected
+  // to /login on the very first render, before the restored session ever has a chance to load.
   useEffect(() => {
     window.electronAPI.getSession().then(s => {
       if (s) setSession(s)
-    })
+    }).finally(() => setCheckedSession(true))
   }, [setSession])
+
+  if (!checkedSession) {
+    return <div className="h-screen flex items-center justify-center bg-cream text-gray-400 text-sm">Loading...</div>
+  }
 
   return (
     <Routes>

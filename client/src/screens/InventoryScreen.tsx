@@ -188,8 +188,8 @@ function DailyCountTab({ products, session }) {
         {savedMsg && <span className="text-xs text-green-700 flex items-center gap-1"><i className="ti ti-check" /> Counts saved</span>}
       </div>
       <p className="text-xs text-gray-500">Enter the actual number of each item you can physically count right now. Everything else — consumption, tally against sales, waste — is calculated automatically once both counts are in.</p>
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl border border-border overflow-x-auto">
+        <table className="w-full text-sm min-w-[520px]">
           <thead>
             <tr className="border-b border-border bg-surface">
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Product</th>
@@ -296,7 +296,8 @@ function WasteTab({ products, session }) {
           <h3 className="text-sm font-medium text-dg">Today's Waste</h3>
           <span className="text-xs text-gray-500">Total cost: <span className="font-medium text-maroon">{fmt(totalCostToday)}</span></span>
         </div>
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[560px]">
           <thead>
             <tr className="border-b border-border">
               <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Item</th>
@@ -320,6 +321,7 @@ function WasteTab({ products, session }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )
@@ -353,8 +355,8 @@ function ReconciliationTab({ session }) {
         )}
       </div>
       <p className="text-xs text-gray-500">Beginning minus Ending is what actually left the shelf. That's compared automatically against what POS sales plus logged waste say should have left. A non-zero variance means the two don't tally.</p>
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl border border-border overflow-x-auto">
+        <table className="w-full text-sm min-w-[720px]">
           <thead>
             <tr className="border-b border-border bg-surface">
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Product</th>
@@ -434,7 +436,7 @@ export function InventoryScreen() {
     <div className="h-full overflow-y-auto bg-cream">
       {stockModal && <StockModal product={stockModal.product} mode={stockModal.mode} onClose={() => setStockModal(null)} onDone={() => { setStockModal(null); loadProducts() }} />}
       {movementsModal && <MovementsModal product={movementsModal} onClose={() => setMovementsModal(null)} />}
-      <div className="sticky top-0 bg-cream border-b border-border px-6 py-3 flex items-center justify-between z-10">
+      <div className="sticky top-0 bg-cream border-b border-border px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2 z-10">
         <div>
           <h1 className="text-lg font-medium text-dg">Inventory</h1>
           <p className="text-xs text-gray-500 mt-0.5">{products.length} products · {session?.branch_name}</p>
@@ -473,7 +475,7 @@ export function InventoryScreen() {
                 <i className="ti ti-alert-triangle text-sm" />Low stock only
               </button>
             </div>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 { label: 'Total products', value: products.length, icon: 'ti-box', warn: false },
                 { label: 'Tracked items', value: (products as any[]).filter(p => p.track_inventory).length, icon: 'ti-chart-bar', warn: false },
@@ -486,8 +488,8 @@ export function InventoryScreen() {
                 </div>
               ))}
             </div>
-            <div className="bg-white rounded-xl border border-border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-white rounded-xl border border-border overflow-x-auto">
+              <table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="border-b border-border bg-surface">
                     <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Product</th>

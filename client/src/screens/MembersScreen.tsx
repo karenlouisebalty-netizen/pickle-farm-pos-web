@@ -222,7 +222,7 @@ export function MembersScreen() {
       {showNew && <NewMemberModal onClose={() => setShowNew(false)} onDone={() => { setShowNew(false); loadMembers() }} />}
       {renewModal && <RenewModal member={renewModal} onClose={() => setRenewModal(null)} onDone={() => { setRenewModal(null); loadMembers() }} />}
 
-      <div className="sticky top-0 bg-cream border-b border-border px-6 py-3 flex items-center justify-between z-10">
+      <div className="sticky top-0 bg-cream border-b border-border px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-2 z-10">
         <div>
           <h1 className="text-lg font-medium text-dg">Members</h1>
           <p className="text-xs text-gray-500 mt-0.5">{activeCount} active · {session?.branch_name}</p>
@@ -233,7 +233,7 @@ export function MembersScreen() {
       </div>
 
       <div className="px-6 py-4 space-y-4">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="bg-white rounded-xl border border-border p-4">
             <div className="text-xs text-gray-500 mb-1 flex items-center gap-1"><i className="ti ti-users text-sm" />Total members</div>
             <div className="text-2xl font-medium text-dg">{members.length}</div>
@@ -248,8 +248,8 @@ export function MembersScreen() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-48">
             <i className="ti ti-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" />
             <input type="text" placeholder="Search by name, code, or contact..." value={search} onChange={e => setSearch(e.target.value)}
               className="w-full pl-8 pr-3 py-2 text-sm border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-olive" />
@@ -264,8 +264,8 @@ export function MembersScreen() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-xl border border-border overflow-x-auto">
+          <table className="w-full text-sm min-w-[720px]">
             <thead>
               <tr className="border-b border-border bg-surface">
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Member</th>

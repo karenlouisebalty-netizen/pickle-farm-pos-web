@@ -185,9 +185,9 @@ export function OpenPlayScreen(){
 
   return (
     <div className='h-full overflow-y-auto bg-cream'>
-      <div className='sticky top-0 bg-cream border-b border-border px-5 py-3 flex items-center justify-between z-10'>
+      <div className='sticky top-0 bg-cream border-b border-border px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2 z-10'>
         <div>
-          <div className='flex items-center gap-2'>
+          <div className='flex items-center gap-2 flex-wrap'>
             <h1 className='text-lg font-medium text-dg'>Open Play</h1>
             <span className='text-xs bg-dg text-white px-2 py-0.5 rounded-full font-medium'>Session {sessionNum}</span>
             <span className='text-xs text-gray-400'>{fmtTime(sessionStart)}</span>
@@ -195,7 +195,7 @@ export function OpenPlayScreen(){
           </div>
           <p className='text-xs text-gray-500'>{new Date().toLocaleDateString('en-PH',{weekday:'long',month:'long',day:'numeric'})}</p>
         </div>
-        <div className='flex items-center gap-2'>
+        <div className='flex items-center gap-2 flex-wrap'>
           <div className='flex gap-3 text-center mr-1'>
             <div><div className='text-base font-medium text-dg'>{players.length}</div><div className='text-xs text-gray-400'>Players</div></div>
             <div><div className='text-base font-medium text-olive'>{onCourt}</div><div className='text-xs text-gray-400'>On court</div></div>
@@ -212,7 +212,7 @@ export function OpenPlayScreen(){
       </div>
 
       {tab==='play'&&(
-        <div className='p-4 grid grid-cols-3 gap-4'>
+        <div className='p-4 grid grid-cols-1 lg:grid-cols-3 gap-4'>
           <div className='space-y-4'>
             <div className='bg-white rounded-xl border border-border p-4'>
               <div className='text-sm font-medium text-dg mb-3'>Register player</div>
@@ -232,7 +232,7 @@ export function OpenPlayScreen(){
               <div className='text-sm font-medium text-dg mb-1 flex items-center justify-between'>
                 Waiting <span className='text-xs bg-dg text-white px-2 py-0.5 rounded-full'>{waiting.length}</span>
               </div>
-              <div className='text-xs text-gray-400 mb-2 flex items-center gap-1'><i className='ti ti-clock text-olive text-xs'/>Longest rest plays next · Drag to assign</div>
+              <div className='text-xs text-gray-400 mb-2 flex items-center gap-1'><i className='ti ti-clock text-olive text-xs'/>Longest rest plays next · Tap C1/C2 to assign (or drag, on a mouse)</div>
               {sortedWaiting.length===0?(
                 <p className='text-xs text-gray-400 text-center py-3'>No players waiting</p>
               ):sortedWaiting.map((p,i)=>{
@@ -247,20 +247,27 @@ export function OpenPlayScreen(){
                       <div className='flex items-center gap-1'>
                         <span className='text-xs font-medium text-dg truncate'>{p.player_name}</span>
                         {isSug1&&<span className='text-xs bg-olive text-white px-1 rounded flex-shrink-0'>Next</span>}
-                        
+
                       </div>
-                      <div className='text-xs text-gray-400'>{lastDone?'Rested '+ago(new Date(lastDone).toISOString()):'Joined '+ago(p.check_in_at)}`${gs} game${gs!==1?"s":""}`</div>
+                      <div className='text-xs text-gray-400'>{lastDone?'Rested '+ago(new Date(lastDone).toISOString()):'Joined '+ago(p.check_in_at)} · {gs} game{gs!==1?'s':''}</div>
                     </div>
                     <span className={'text-xs px-1 py-0.5 rounded border mr-1 '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                    {/* Tap-to-assign — HTML5 drag doesn't work via touch on iPad, so this is the primary way to assign on tablet. */}
+                    <div className='flex items-center gap-1 mr-1'>
+                      <button onClick={()=>assign(p,'Court 1')} disabled={courts['Court 1'].length>=4} title='Assign to Court 1'
+                        className='text-xs px-1.5 py-1 rounded-md bg-dg/10 text-dg font-medium hover:bg-dg/20 disabled:opacity-30 disabled:cursor-not-allowed'>C1</button>
+                      <button onClick={()=>assign(p,'Court 2')} disabled={courts['Court 2'].length>=4} title='Assign to Court 2'
+                        className='text-xs px-1.5 py-1 rounded-md bg-dg/10 text-dg font-medium hover:bg-dg/20 disabled:opacity-30 disabled:cursor-not-allowed'>C2</button>
+                    </div>
                     <button onClick={()=>setRemoving(p)} className='text-gray-300 hover:text-red-400 text-xs p-0.5'><i className='ti ti-x'/></button>
                   </div>
                 )
               })}
             </div>
           </div>
-          <div className='col-span-2 space-y-4'>
+          <div className='lg:col-span-2 space-y-4'>
             <div className='bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-700'>
-              <strong>Fair rotation:</strong> Drag players from waiting list to assign manually. Game stops only when YOU tap Done.
+              <strong>Fair rotation:</strong> Tap C1/C2 (or drag, on a mouse) to assign a waiting player. Game stops only when YOU tap Done.
             </div>
             {['Court 1','Court 2'].map(court=>{
               const cp=courts[court]
@@ -331,7 +338,7 @@ export function OpenPlayScreen(){
                       <div>
                         <div className={'text-xs font-medium mb-1.5 flex items-center gap-1 '+'text-olive'}>
                           <i className='ti ti-sparkles'/>
-                          'Next up — longest waiting' + ' (' + (4-cp.length) + ' spot' + (4-cp.length!==1?'s':'') + ')'
+                          {'Next up — longest waiting (' + (4-cp.length) + ' spot' + (4-cp.length!==1?'s':'') + ')'}
                         </div>
                         {sug.slice(0,4-cp.length).map((p,i)=>{
                           const lastDone=mem.lastFinished[p.id]
@@ -384,7 +391,7 @@ export function OpenPlayScreen(){
       )}
 
       {tab==='lb'&&(
-        <div className='p-4 grid grid-cols-2 gap-4'>
+        <div className='p-4 grid grid-cols-1 lg:grid-cols-2 gap-4'>
           <div className='space-y-4'>
             {potw?(
               <div className='bg-gradient-to-br from-yellow-50 to-orange-50 border border-yellow-300 rounded-xl p-4'>
@@ -431,7 +438,7 @@ export function OpenPlayScreen(){
       {tab==='history'&&(
         <div className='p-4'>
           <div className='text-sm font-medium text-dg mb-4'>Today's sessions</div>
-          <div className='grid grid-cols-2 gap-4'>
+          <div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
             {mem.sessions.map(s=>(
               <div key={s.num} className='bg-white rounded-xl border border-border p-4'>
                 <div className='flex items-center gap-2 mb-3'><span className='text-xs bg-gray-400 text-white px-2 py-0.5 rounded-full font-medium'>Session {s.num} Done</span><span className='text-xs text-gray-400'>{fmtTime(s.start)} - {fmtTime(s.end)}</span></div>
@@ -452,19 +459,27 @@ export function OpenPlayScreen(){
         <div className='fixed inset-0 bg-black/50 flex items-center justify-center z-50'>
           <div className='bg-white rounded-xl p-5 w-96 border border-border shadow-xl'>
             <h3 className='text-sm font-medium text-dg mb-1'>Set Teams — {showTeamPicker}</h3>
-            <p className='text-xs text-gray-500 mb-4'>Drag players between teams. Auto-balanced by skill.</p>
+            <p className='text-xs text-gray-500 mb-4'>Tap the swap icon to move a player (or drag, on a mouse). Auto-balanced by skill.</p>
             <div className='grid grid-cols-2 gap-3 mb-4'>
-              {['t1','t2'].map((team,ti)=>(
+              {['t1','t2'].map((team,ti)=>{
+                const other=team==='t1'?'t2':'t1'
+                return(
                 <div key={team} className={'rounded-lg border p-2 min-h-20 '+(ti===0?'bg-green-50 border-green-200':'bg-blue-50 border-blue-200')} onDragOver={onDragOver} onDrop={e=>onTeamDrop(e,showTeamPicker,team)}>
                   <div className={'text-xs font-medium mb-2 '+(ti===0?'text-green-700':'text-blue-700')}>Team {ti+1}</div>
                   {(teams[showTeamPicker][team]||[]).map(p=>(
                     <div key={p.id} draggable onDragStart={()=>onTeamDragStart(p,team)} className='flex items-center gap-1.5 p-1.5 bg-white rounded border border-border mb-1 last:mb-0 cursor-grab'>
                       <span className='text-xs font-medium text-dg flex-1'>{p.player_name}</span>
                       <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                      <button
+                        onClick={()=>setTeams(t=>({...t,[showTeamPicker]:{...t[showTeamPicker],[team]:t[showTeamPicker][team].filter(x=>x.id!==p.id),[other]:[...t[showTeamPicker][other],p]}}))}
+                        title={'Move to Team '+(other==='t1'?1:2)}
+                        className='text-gray-400 hover:text-dg p-0.5 flex-shrink-0'>
+                        <i className='ti ti-arrows-left-right text-xs'/>
+                      </button>
                     </div>
                   ))}
                 </div>
-              ))}
+              )})}
             </div>
             {courts[showTeamPicker].filter(p=>!teams[showTeamPicker].t1.find(x=>x.id===p.id)&&!teams[showTeamPicker].t2.find(x=>x.id===p.id)).length>0&&(
               <div className='mb-3'>

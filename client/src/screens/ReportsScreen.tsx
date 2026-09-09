@@ -177,12 +177,12 @@ export function ReportsScreen(){
 
   return (
     <div className='h-full overflow-y-auto bg-cream'>
-      <div className='sticky top-0 bg-cream border-b border-border px-5 py-3 flex items-center justify-between z-10'>
+      <div className='sticky top-0 bg-cream border-b border-border px-4 sm:px-5 py-3 flex flex-wrap items-center justify-between gap-2 z-10'>
         <div>
           <h1 className='text-lg font-medium text-dg'>Reports</h1>
           <p className='text-xs text-gray-500'>{fmtDate(date)}</p>
         </div>
-        <div className='flex items-center gap-2'>
+        <div className='flex flex-wrap items-center gap-2'>
           <button onClick={()=>setDate(d=>addDays(d,-1))} className='px-2 py-1.5 rounded-lg border border-border bg-white text-gray-600 text-sm'>‹</button>
           <input type='date' value={date} onChange={e=>setDate(e.target.value)} className='px-3 py-1.5 rounded-lg border border-border text-sm outline-none'/>
           <button onClick={()=>setDate(d=>addDays(d,1))} disabled={isToday} className='px-2 py-1.5 rounded-lg border border-border bg-white text-gray-600 text-sm disabled:opacity-40'>›</button>
@@ -195,7 +195,7 @@ export function ReportsScreen(){
         <div className='flex items-center justify-center h-64'><div className='text-sm text-gray-400'>Loading...</div></div>
       ):(
         <div className='p-4 space-y-4'>
-          <div className='grid grid-cols-5 gap-3'>
+          <div className='grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3'>
             {[
               {label:'Revenue',value:formatPeso(summary?.total_revenue||0),icon:'ti-currency-peso',color:'text-dg'},
               {label:'Transactions',value:summary?.transaction_count||0,icon:'ti-receipt',color:'text-olive'},
