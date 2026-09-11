@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSessionStore } from '../stores/sessionStore'
-import { todayString } from '../shared/utils'
+import { todayString, addDays } from '../shared/utils'
 
 const CATEGORIES = [
   { value: 'all', label: 'All Items' },
@@ -21,6 +21,7 @@ const WASTE_REASONS = [
 ]
 
 const fmt = (n) => '₱' + (n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })
+const formatShortDate = (dateStr: string) => new Date(dateStr + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
 
 function StockBadge({ qty, threshold }) {
   if (qty === 0) return <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">Out of stock</span>
@@ -128,21 +129,39 @@ function DailyCountTab({ products, session }) {
   const [countType, setCountType] = useState('start')
   const [existing, setExisting] = useState({}) // productId -> { start, end }
   const [inputs, setInputs] = useState({}) // productId -> string
+  const [prevEnd, setPrevEnd] = useState({}) // productId -> prior day's "end" count
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState(false)
 
   const tracked = useMemo(() => (products as any[]).filter(p => p.track_inventory && p.is_active), [products])
+  // Cashiers count what they physically see — showing them the system's own number defeats
+  // the point of an independent count (and isn't information they need). Owner/manager only.
+  const showSystemStock = session?.role !== 'cashier'
+  const prevDate = useMemo(() => addDays(date, -1), [date])
+  // The carryover check only makes sense while looking at a Beginning count — that's the
+  // number that should match what was physically left on the shelf when the prior day ended.
+  const showCarryover = countType === 'start'
 
   async function load() {
     if (!session) return
     setLoading(true)
-    const rows = await window.electronAPI.getInventoryCounts(session.branch_id, date)
+    // Pull today's counts and the prior day's counts together — the latter is what "End of
+    // Shift" the day before someone counted, so it can be checked against this Beginning count.
+    const [rows, prevRows] = await Promise.all([
+      window.electronAPI.getInventoryCounts(session.branch_id, date),
+      window.electronAPI.getInventoryCounts(session.branch_id, prevDate),
+    ])
     const map = {}
     for (const r of rows as any[]) {
       map[r.product_id] = { ...(map[r.product_id] || {}), [r.count_type]: r.quantity }
     }
     setExisting(map)
+    const prevMap = {}
+    for (const r of prevRows as any[]) {
+      if (r.count_type === 'end') prevMap[r.product_id] = r.quantity
+    }
+    setPrevEnd(prevMap)
     const nextInputs = {}
     for (const p of tracked) {
       const v = map[p.id]?.[countType]
@@ -161,6 +180,22 @@ function DailyCountTab({ products, session }) {
     }
     setInputs(nextInputs)
   }, [countType])
+
+  // A mismatch means whatever was left on the shelf at the end of the prior day doesn't match
+  // what's physically there now — worth flagging as possible shrinkage, a miscount, or stock
+  // moved overnight without being logged.
+  const carryoverMismatches = useMemo(() => {
+    if (!showCarryover) return []
+    return tracked.filter((p: any) => {
+      const py = prevEnd[p.id]
+      const cur = inputs[p.id]
+      if (py == null || cur === '' || cur == null) return false
+      const curNum = parseInt(String(cur), 10)
+      return !isNaN(curNum) && curNum !== py
+    })
+  }, [showCarryover, tracked, prevEnd, inputs])
+
+  const colCount = 2 + (showSystemStock ? 1 : 0) + (showCarryover ? 1 : 0)
 
   async function handleSave() {
     const counts = Object.entries(inputs)
@@ -186,34 +221,57 @@ function DailyCountTab({ products, session }) {
           <button onClick={() => setCountType('end')} className={`px-4 py-2 text-sm font-medium ${countType === 'end' ? 'bg-dg text-white' : 'bg-white text-gray-600 hover:bg-surface'}`}>End of Shift</button>
         </div>
         {savedMsg && <span className="text-xs text-green-700 flex items-center gap-1"><i className="ti ti-check" /> Counts saved</span>}
+        {showCarryover && carryoverMismatches.length > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium">
+            <i className="ti ti-alert-triangle text-sm" />{carryoverMismatches.length} item{carryoverMismatches.length === 1 ? '' : 's'} don't match yesterday's ending count
+          </div>
+        )}
       </div>
       <p className="text-xs text-gray-500">Enter the actual number of each item you can physically count right now. Everything else — consumption, tally against sales, waste — is calculated automatically once both counts are in.</p>
+      {showCarryover && (
+        <p className="text-xs text-gray-500">
+          <i className="ti ti-arrows-diff text-sm align-[-2px] mr-1" />
+          "Yesterday's Ending" is what was counted at End of Shift on {formatShortDate(prevDate)}. It should match today's Beginning count for each item — rows in red don't, which can mean shrinkage, a miscount, or stock that moved overnight without being logged.
+        </p>
+      )}
       <div className="bg-white rounded-xl border border-border overflow-x-auto">
         <table className="w-full text-sm min-w-[520px]">
           <thead>
             <tr className="border-b border-border bg-surface">
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Product</th>
-              <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">System Stock</th>
+              {showSystemStock && <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">System Stock</th>}
+              {showCarryover && <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Yesterday's Ending</th>}
               <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 w-40">{countType === 'start' ? 'Beginning Count' : 'Ending Count'}</th>
             </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={3} className="text-center py-12 text-gray-400 text-sm">Loading...</td></tr>
-            : tracked.length === 0 ? <tr><td colSpan={3} className="text-center py-12 text-gray-400 text-sm">No tracked items</td></tr>
-            : tracked.map((p: any) => (
-              <tr key={p.id} className="border-b border-border last:border-0">
-                <td className="px-4 py-2.5 font-medium text-dg text-sm">{p.name}</td>
-                <td className="px-4 py-2.5 text-right text-xs text-gray-400">{p.stock_qty}</td>
-                <td className="px-4 py-2.5 text-right">
-                  <input
-                    type="number" min={0}
-                    value={inputs[p.id] ?? ''}
-                    onChange={e => setInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
-                    className="w-24 border border-border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-olive"
-                  />
-                </td>
-              </tr>
-            ))}
+            {loading ? <tr><td colSpan={colCount} className="text-center py-12 text-gray-400 text-sm">Loading...</td></tr>
+            : tracked.length === 0 ? <tr><td colSpan={colCount} className="text-center py-12 text-gray-400 text-sm">No tracked items</td></tr>
+            : tracked.map((p: any) => {
+              const py = prevEnd[p.id]
+              const curNum = inputs[p.id] !== '' && inputs[p.id] != null ? parseInt(String(inputs[p.id]), 10) : null
+              const mismatch = showCarryover && py != null && curNum != null && !isNaN(curNum) && curNum !== py
+              return (
+                <tr key={p.id} className={`border-b border-border last:border-0 ${mismatch ? 'bg-red-50/50' : ''}`}>
+                  <td className="px-4 py-2.5 font-medium text-dg text-sm">{p.name}</td>
+                  {showSystemStock && <td className="px-4 py-2.5 text-right text-xs text-gray-400">{p.stock_qty}</td>}
+                  {showCarryover && (
+                    <td className={`px-4 py-2.5 text-right text-xs ${mismatch ? 'text-red-700 font-medium' : 'text-gray-400'}`}>
+                      {py != null ? py : <span className="text-gray-300">no count</span>}
+                      {mismatch && <span className="ml-1">({curNum! > py ? '+' : ''}{curNum! - py})</span>}
+                    </td>
+                  )}
+                  <td className="px-4 py-2.5 text-right">
+                    <input
+                      type="number" min={0}
+                      value={inputs[p.id] ?? ''}
+                      onChange={e => setInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
+                      className={`w-24 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-olive ${mismatch ? 'border-red-300' : 'border-border'}`}
+                    />
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

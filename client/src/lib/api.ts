@@ -112,6 +112,9 @@ export const api = {
 
   // ── Reports ──
   getDailySummary:  (branchId: string, dateFrom: string, dateTo: string) => request<DailySummary>('GET', `/reports/daily${qs({ branchId, dateFrom, dateTo })}`),
+  // Cashier-accessible — always today, server-computed (see reports.routes.ts). Used by the
+  // Daily Sales screen so staff can check the drawer without seeing revenue history.
+  getTodaySummary:  (branchId: string) => request<DailySummary>('GET', `/reports/today${qs({ branchId })}`),
 
   // ── Auth ──
   login: async (userId: string, pin: string): Promise<Session> => {

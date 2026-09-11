@@ -8,6 +8,11 @@ const NAV = [
   { to: '/reservations',icon: 'ti-calendar',       label: 'Reservations' },
 ]
 
+// Cashier-only — a same-day totals view so they can check the cash drawer against what
+// the system logged, without the revenue history/monthly views Dashboard and Reports give
+// managers and the owner.
+const DAILY_SALES = { to: '/daily-sales', icon: 'ti-cash', label: 'Daily Sales' }
+
 const NAV2 = [
   { to: '/members',     icon: 'ti-id-badge',       label: 'Members'      },
   { to: '/inventory',   icon: 'ti-package',        label: 'Inventory'    },
@@ -51,8 +56,9 @@ export function AppLayout() {
 
   // Cashiers don't see the Dashboard (revenue/income) or Reports —
   // those stay manager/owner only. Attendance (staff photos + payroll
-  // hours) is owner only. Settings stays visible either way.
-  const nav1 = isCashier ? NAV.filter(n => n.to !== '/') : NAV
+  // hours) is owner only. Settings stays visible either way. Cashiers get
+  // Daily Sales instead of Dashboard — today's totals only, no history.
+  const nav1 = isCashier ? [...NAV.filter(n => n.to !== '/'), DAILY_SALES] : NAV
   const nav3 = NAV3.filter(n => {
     if (n.to === '/reports') return !isCashier
     if (n.to === '/attendance') return isOwner

@@ -18,6 +18,14 @@ export function nowISO(): string {
   return new Date().toISOString()
 }
 
+/** Shift a YYYY-MM-DD date string by `days` (negative goes back). Used to find
+ *  "the day before" a selected daily-count date for the carryover check. */
+export function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 /** Format a Date or ISO string as locale date */
 export function formatDate(d: Date | string): string {
   const date = typeof d === 'string' ? new Date(d) : d

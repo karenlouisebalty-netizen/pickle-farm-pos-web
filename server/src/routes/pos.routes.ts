@@ -47,8 +47,18 @@ posRoutes.get('/transactions/:id', requireAuth, (req, res) => {
   res.json(txn)
 })
 
+// A cashier can only ever get today's transactions here (their own Daily Sales screen
+// reads this) — the date params are ignored for that role, computed as today() server-side
+// instead, so this can't be used to pull historical/monthly revenue even by calling the
+// API directly with a spoofed date range. Manager/owner keep full date-range access.
 posRoutes.get('/transactions', requireAuth, (req, res) => {
-  const { branchId, dateFrom, dateTo } = req.query as Record<string, string>
+  const { branchId } = req.query as Record<string, string>
+  let { dateFrom, dateTo } = req.query as Record<string, string>
+  if (req.session!.role === 'cashier') {
+    const today = new Date().toISOString().slice(0, 10)
+    dateFrom = today
+    dateTo = today
+  }
   res.json(TransactionService.listByDate(branchId, dateFrom, dateTo))
 })
 

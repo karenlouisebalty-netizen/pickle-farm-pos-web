@@ -16,6 +16,7 @@ import { ExpensesScreen } from './screens/ExpensesScreen'
 import { MembersScreen } from './screens/MembersScreen'
 import { AttendanceScreen } from './screens/AttendanceScreen'
 import { PublicAvailabilityScreen } from './screens/PublicAvailabilityScreen'
+import { DailySalesScreen } from './screens/DailySalesScreen'
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   // Select `session` itself, not the isAuthenticated() function — a selector that always
@@ -75,6 +76,7 @@ export default function App() {
         <Route path="/receipt"      element={<ReceiptScreen />} />
         <Route path="/openplay"     element={<OpenPlayScreen />} />
         <Route path="/reservations" element={<ReservationsScreen />} />
+        <Route path="/daily-sales" element={<DailySalesScreen />} />
         <Route path="/members"             element={<MembersScreen />} />
         <Route path="/inventory"           element={<InventoryScreen />} />
         <Route path="/expenses"           element={<ExpensesScreen />} />
