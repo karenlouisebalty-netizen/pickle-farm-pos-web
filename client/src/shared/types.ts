@@ -33,6 +33,8 @@ export interface User {
   is_active: boolean
   last_login_at?: string
   created_at: string
+  /** Flat amount paid per day worked — payroll, set by the owner. */
+  daily_rate: number
 }
 
 export interface Customer {
@@ -265,9 +267,12 @@ export interface AttendanceLog {
 export interface AttendanceSummaryRow {
   user_id: string
   full_name: string
+  daily_rate: number
   days_present: number
+  paid_days: number
   total_hours: number
-  days: Array<{ date: string; hours: number }>
+  total_salary: number
+  days: Array<{ date: string; hours: number; paid: boolean; amount: number }>
 }
 
 export interface DailySummary {

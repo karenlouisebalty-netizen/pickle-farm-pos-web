@@ -151,6 +151,9 @@ export const api = {
   // owner session (e.g. the Attendance screen), passed when called pre-auth.
   changeStaffPin: (userId: string, pin: string, ownerToken?: string) =>
     request<{ success: boolean }>('PATCH', `/auth/users/${userId}/pin`, { pin }, ownerToken ? { overrideToken: ownerToken } : undefined),
+  // Called from the Attendance screen, which already requires an owner session — no ownerToken needed.
+  setStaffDailyRate: (userId: string, dailyRate: number) =>
+    request<{ success: boolean }>('PATCH', `/auth/users/${userId}/rate`, { dailyRate }),
 
   // ── Settings ──
   getSetting: (key: string) => request<{ value: string | null }>('GET', `/settings/${key}`).then(r => r.value),

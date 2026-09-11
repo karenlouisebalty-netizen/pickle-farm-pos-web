@@ -33,6 +33,8 @@ export interface User {
   is_active: boolean
   last_login_at?: string
   created_at: string
+  /** Flat amount paid per day worked — payroll, set by the owner. */
+  daily_rate: number
 }
 
 export interface Customer {

@@ -54,7 +54,7 @@ export const AuthService = {
   listUsers(branchId: string): User[] {
     const db = getDb()
     return db.prepare(`
-      SELECT id, branch_id, full_name, email, role, is_active, last_login_at, created_at
+      SELECT id, branch_id, full_name, email, role, is_active, last_login_at, created_at, daily_rate
       FROM users WHERE branch_id = ? AND is_active = 1 ORDER BY role, full_name
     `).all(branchId) as User[]
   },
@@ -77,12 +77,20 @@ export const AuthService = {
       INSERT INTO users (id, branch_id, full_name, pin_hash, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, 'cashier', 1, ?, ?)
     `).run(id, branchId, fullName, hash, now, now)
-    return db.prepare('SELECT id, branch_id, full_name, email, role, is_active, last_login_at, created_at FROM users WHERE id=?').get(id) as User
+    return db.prepare('SELECT id, branch_id, full_name, email, role, is_active, last_login_at, created_at, daily_rate FROM users WHERE id=?').get(id) as User
   },
 
   /** Deactivate a staff member (soft delete) — keeps their sales/attendance history intact. */
   deactivateStaff(userId: string): void {
     const db = getDb()
     db.prepare("UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?").run(nowISO(), userId)
+  },
+
+  /** Set a staff member's flat daily rate for payroll — owner-editable, takes effect on the
+   *  next attendance summary computed (past months are not retroactively recalculated with
+   *  a different historical rate; the summary always uses the current rate). */
+  setDailyRate(userId: string, dailyRate: number): void {
+    const db = getDb()
+    db.prepare('UPDATE users SET daily_rate = ?, updated_at = ? WHERE id = ?').run(dailyRate, nowISO(), userId)
   },
 }

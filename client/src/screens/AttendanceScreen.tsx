@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSessionStore } from '../stores/sessionStore'
+import { formatPeso } from '../shared/utils'
 import type { AttendanceLog, AttendanceSummaryRow, User } from '../shared/types'
 
 function fmtDateTime(iso: string) {
@@ -105,6 +106,53 @@ function ChangePinModal({ user, onClose, onDone }: { user: User; onClose: () => 
   )
 }
 
+/** Inline-editable daily pay rate for one staff member — saves on blur/Enter when changed. */
+function DailyRateInput({ user, onSaved }: { user: User; onSaved: (userId: string, rate: number) => void }) {
+  const [value, setValue] = useState(String(user.daily_rate ?? 0))
+  const [saving, setSaving] = useState(false)
+  const [justSaved, setJustSaved] = useState(false)
+
+  useEffect(() => { setValue(String(user.daily_rate ?? 0)) }, [user.daily_rate])
+
+  async function save() {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed < 0) { setValue(String(user.daily_rate ?? 0)); return }
+    if (parsed === user.daily_rate) return
+    setSaving(true)
+    try {
+      await window.electronAPI.setStaffDailyRate(user.id, parsed)
+      onSaved(user.id, parsed)
+      setJustSaved(true)
+      setTimeout(() => setJustSaved(false), 1500)
+    } catch {
+      setValue(String(user.daily_rate ?? 0))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-2">
+      {justSaved && <span className="text-[11px] text-green-600">Saved</span>}
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-gray-400">₱</span>
+        <input
+          type="number"
+          min={0}
+          step="1"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+          disabled={saving}
+          className="w-20 border border-border rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-olive disabled:opacity-50"
+        />
+        <span className="text-xs text-gray-400">/day</span>
+      </div>
+    </div>
+  )
+}
+
 export function AttendanceScreen() {
   const branchId = useSessionStore(s => s.session?.branch_id) || 'branch-pf-001'
   const [tab, setTab] = useState<'summary' | 'photos' | 'staff'>('summary')
@@ -179,13 +227,15 @@ export function AttendanceScreen() {
           summary.length === 0 ? (
             <p className="text-sm text-gray-500">No attendance records for this month.</p>
           ) : (
-            <div className="bg-white rounded-xl shadow-card border border-border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-white rounded-xl shadow-card border border-border overflow-x-auto">
+              <table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-border bg-surface">
                     <th className="py-3 px-4 font-medium">Staff</th>
                     <th className="py-3 px-4 font-medium text-right">Days Present</th>
                     <th className="py-3 px-4 font-medium text-right">Total Hours</th>
+                    <th className="py-3 px-4 font-medium text-right">Daily Rate</th>
+                    <th className="py-3 px-4 font-medium text-right">Salary</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -193,10 +243,20 @@ export function AttendanceScreen() {
                     <tr key={r.user_id} className="border-b border-border last:border-0">
                       <td className="py-3 px-4 font-medium text-dg">{r.full_name}</td>
                       <td className="py-3 px-4 text-right text-dg">{r.days_present}</td>
-                      <td className="py-3 px-4 text-right font-semibold text-dg">{r.total_hours.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right text-dg">{r.total_hours.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right text-gray-500">{formatPeso(r.daily_rate)}/day</td>
+                      <td className="py-3 px-4 text-right font-semibold text-dg">{formatPeso(r.total_salary)}</td>
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="bg-surface">
+                    <td className="py-3 px-4 font-medium text-dg" colSpan={4}>Total payroll this month</td>
+                    <td className="py-3 px-4 text-right font-semibold text-dg">
+                      {formatPeso(summary.reduce((sum, r) => sum + r.total_salary, 0))}
+                    </td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )
@@ -249,11 +309,13 @@ export function AttendanceScreen() {
             {staffList.filter(u => u.role !== 'owner').length === 0 ? (
               <p className="text-sm text-gray-500 p-4">No staff yet — add one from the Time Clock tab on the sign-in screen.</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[560px]">
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-border bg-surface">
                     <th className="py-3 px-4 font-medium">Staff</th>
                     <th className="py-3 px-4 font-medium">Role</th>
+                    <th className="py-3 px-4 font-medium text-right">Daily Rate</th>
                     <th className="py-3 px-4 font-medium text-right">PIN</th>
                   </tr>
                 </thead>
@@ -262,6 +324,12 @@ export function AttendanceScreen() {
                     <tr key={u.id} className="border-b border-border last:border-0">
                       <td className="py-3 px-4 font-medium text-dg">{u.full_name}</td>
                       <td className="py-3 px-4 text-gray-500 capitalize">{u.role}</td>
+                      <td className="py-3 px-4">
+                        <DailyRateInput
+                          user={u}
+                          onSaved={(userId, rate) => setStaffList(list => list.map(x => x.id === userId ? { ...x, daily_rate: rate } : x))}
+                        />
+                      </td>
                       <td className="py-3 px-4 text-right">
                         <button
                           onClick={() => setPinTarget(u)}
@@ -274,6 +342,7 @@ export function AttendanceScreen() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         )}

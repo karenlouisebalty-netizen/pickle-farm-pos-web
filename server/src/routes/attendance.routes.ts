@@ -66,17 +66,17 @@ attendanceRoutes.get('/summary', requireAuth, requireRole('owner'), (req, res) =
   if (!branchId || !month) return res.status(400).json({ error: 'branchId and month are required' })
 
   const rows = db.prepare(`
-    SELECT a.user_id, u.full_name, a.clock_type, a.captured_at
+    SELECT a.user_id, u.full_name, u.daily_rate, a.clock_type, a.captured_at
     FROM attendance_logs a
     JOIN users u ON u.id = a.user_id
     WHERE a.branch_id = ? AND strftime('%Y-%m', a.captured_at) = ?
     ORDER BY a.user_id, a.captured_at ASC
-  `).all(branchId, month) as Array<{ user_id: string; full_name: string; clock_type: 'in' | 'out'; captured_at: string }>
+  `).all(branchId, month) as Array<{ user_id: string; full_name: string; daily_rate: number; clock_type: 'in' | 'out'; captured_at: string }>
 
   // Group by user, then by calendar day; pair sequential in→out to get hours worked.
-  const byUser = new Map<string, { full_name: string; days: Map<string, typeof rows> }>()
+  const byUser = new Map<string, { full_name: string; daily_rate: number; days: Map<string, typeof rows> }>()
   for (const r of rows) {
-    if (!byUser.has(r.user_id)) byUser.set(r.user_id, { full_name: r.full_name, days: new Map() })
+    if (!byUser.has(r.user_id)) byUser.set(r.user_id, { full_name: r.full_name, daily_rate: r.daily_rate, days: new Map() })
     const u = byUser.get(r.user_id)!
     const day = r.captured_at.slice(0, 10)
     if (!u.days.has(day)) u.days.set(day, [])
@@ -86,7 +86,12 @@ attendanceRoutes.get('/summary', requireAuth, requireRole('owner'), (req, res) =
   const summary = Array.from(byUser.entries()).map(([userId, u]) => {
     let totalMs = 0
     let daysPresent = 0
-    const dayBreakdown: Array<{ date: string; hours: number }> = []
+    let paidDays = 0
+    // Salary is a flat rate per day worked (owner sets it per staff member, Manage Staff
+    // tab) — not prorated by hours. A day only counts toward pay once it has at least one
+    // completed clock-in → clock-out pair; clocking in with no matching clock-out yet
+    // (still working, or they forgot) doesn't get paid until it does.
+    const dayBreakdown: Array<{ date: string; hours: number; paid: boolean; amount: number }> = []
 
     for (const [day, entries] of u.days.entries()) {
       daysPresent++
@@ -101,14 +106,24 @@ attendanceRoutes.get('/summary', requireAuth, requireRole('owner'), (req, res) =
         }
       }
       totalMs += dayMs
-      dayBreakdown.push({ date: day, hours: Math.round((dayMs / 3600000) * 100) / 100 })
+      const paid = dayMs > 0
+      if (paid) paidDays++
+      dayBreakdown.push({
+        date: day,
+        hours: Math.round((dayMs / 3600000) * 100) / 100,
+        paid,
+        amount: paid ? u.daily_rate : 0,
+      })
     }
 
     return {
       user_id: userId,
       full_name: u.full_name,
+      daily_rate: u.daily_rate,
       days_present: daysPresent,
+      paid_days: paidDays,
       total_hours: Math.round((totalMs / 3600000) * 100) / 100,
+      total_salary: Math.round(paidDays * u.daily_rate * 100) / 100,
       days: dayBreakdown.sort((a, b) => a.date.localeCompare(b.date)),
     }
   })

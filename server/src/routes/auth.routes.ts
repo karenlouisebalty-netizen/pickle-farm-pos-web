@@ -50,3 +50,13 @@ authRoutes.patch('/users/:id/pin', requireAuth, requireRole('owner'), async (req
   await AuthService.changePin(req.params.id, pin)
   res.json({ success: true })
 })
+
+// Owner only — set a staff member's flat per-day pay rate (payroll).
+authRoutes.patch('/users/:id/rate', requireAuth, requireRole('owner'), (req, res) => {
+  const { dailyRate } = req.body as { dailyRate: number }
+  if (typeof dailyRate !== 'number' || !Number.isFinite(dailyRate) || dailyRate < 0) {
+    return res.status(400).json({ error: 'dailyRate must be a non-negative number' })
+  }
+  AuthService.setDailyRate(req.params.id, dailyRate)
+  res.json({ success: true })
+})
