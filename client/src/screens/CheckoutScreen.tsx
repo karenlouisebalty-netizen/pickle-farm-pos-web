@@ -4,13 +4,14 @@ import { useCartStore } from '../stores/cartStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { formatPeso } from '../shared/utils'
 import { PAYMENT_METHODS } from '../shared/constants'
-import type { PaymentMethod, CheckoutPayload } from '../shared/types'
+import type { PaymentMethod, PaymentStatus, CheckoutPayload } from '../shared/types'
 
 export function CheckoutScreen() {
   const navigate = useNavigate()
   const session = useSessionStore(s => s.session)
   const { items, discount, total, subtotal, discountAmount, clearCart } = useCartStore()
   const [method, setMethod] = useState<PaymentMethod>('cash')
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('paid')
   const [entered, setEntered] = useState('')
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
@@ -18,6 +19,7 @@ export function CheckoutScreen() {
   const totalDue = total()
   const tendered = parseInt(entered || '0', 10)
   const change = tendered - totalDue
+  const isUnpaid = paymentStatus === 'unpaid'
 
   function press(key: string) {
     if (key === 'del') { setEntered(e => e.slice(0, -1)); return }
@@ -27,7 +29,7 @@ export function CheckoutScreen() {
 
   async function handleConfirm() {
     if (!session) return
-    if (method === 'cash' && tendered < totalDue) return
+    if (!isUnpaid && method === 'cash' && tendered < totalDue) return
     setProcessing(true)
     setError('')
 
@@ -37,8 +39,11 @@ export function CheckoutScreen() {
         cashier_id:  session.user_id,
         items:       items.map(({ product_id, item_name, unit_price, quantity, discount: d, notes }) =>
                        ({ product_id, item_name, unit_price, quantity, discount: d, notes })),
-        payments:    [{ payment_method: method, amount: method === 'cash' ? tendered : totalDue, change_given: method === 'cash' ? change : 0 }],
+        // Unpaid sales still record the intended method and the full amount due — no cash
+        // was actually tendered, and there's no change to give since nothing was paid yet.
+        payments:    [{ payment_method: method, amount: isUnpaid ? totalDue : (method === 'cash' ? tendered : totalDue), change_given: isUnpaid ? 0 : (method === 'cash' ? change : 0) }],
         discount:    { type: 'fixed', value: discountAmount(), reason: discount.reason },
+        payment_status: paymentStatus,
       }
 
       const txn = await window.electronAPI.checkout(payload)
@@ -109,8 +114,32 @@ export function CheckoutScreen() {
             </div>
           </div>
 
+          {/* Paid or not */}
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-4 mb-2">Payment Status</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setPaymentStatus('paid')}
+              className={`p-2.5 rounded-lg border text-xs font-medium text-center transition-all ${paymentStatus === 'paid' ? 'border-dg bg-green-50 text-dg' : 'border-border text-gray-500 hover:border-olive'}`}
+            >
+              <i className="ti ti-circle-check text-lg block mb-1" />
+              Paid
+            </button>
+            <button
+              onClick={() => setPaymentStatus('unpaid')}
+              className={`p-2.5 rounded-lg border text-xs font-medium text-center transition-all ${paymentStatus === 'unpaid' ? 'border-orange-400 bg-orange-50 text-orange-700' : 'border-border text-gray-500 hover:border-olive'}`}
+            >
+              <i className="ti ti-clock text-lg block mb-1" />
+              Not Paid Yet
+            </button>
+          </div>
+          {isUnpaid && (
+            <p className="text-xs text-orange-600 mt-1.5">
+              This sale will still go through — items sold, stock deducted — but it's flagged unpaid until someone marks it paid later (Reports or Daily Sales).
+            </p>
+          )}
+
           {/* Payment method */}
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-4 mb-2">Payment Method</p>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-4 mb-2">{isUnpaid ? 'Intended Payment Method' : 'Payment Method'}</p>
           <div className="grid grid-cols-2 gap-2">
             {PAYMENT_METHODS.map(m => (
               <button
@@ -129,9 +158,16 @@ export function CheckoutScreen() {
           )}
         </div>
 
-        {/* Right: numpad (only for cash) */}
+        {/* Right: numpad (only for cash, and only when actually being paid now) */}
         <div className="w-56 p-4 flex flex-col bg-white">
-          {method === 'cash' ? (
+          {isUnpaid ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center text-orange-600 gap-2">
+              <i className="ti ti-clock text-4xl opacity-40" />
+              <p className="text-sm font-medium">Marking as Not Paid</p>
+              <p className="text-xs">Amount owed: {formatPeso(totalDue)}</p>
+              <p className="text-xs opacity-70">No cash to count yet — this is recorded as outstanding.</p>
+            </div>
+          ) : method === 'cash' ? (
             <>
               <p className="text-xs text-gray-500 mb-1.5">Amount tendered</p>
               <div className="bg-surface rounded-lg px-3 py-2 text-2xl font-medium text-dg text-right mb-3 border border-border min-h-[48px]">
@@ -180,10 +216,10 @@ export function CheckoutScreen() {
 
           <button
             onClick={handleConfirm}
-            disabled={processing || (method === 'cash' && tendered < totalDue)}
-            className="w-full py-3 rounded-xl bg-dg text-white font-semibold text-sm hover:bg-dg-light disabled:opacity-40 disabled:cursor-default active:scale-98 transition-all"
+            disabled={processing || (!isUnpaid && method === 'cash' && tendered < totalDue)}
+            className={`w-full py-3 rounded-xl text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-default active:scale-98 transition-all ${isUnpaid ? 'bg-orange-500 hover:bg-orange-600' : 'bg-dg hover:bg-dg-light'}`}
           >
-            {processing ? 'Processing…' : 'Confirm & Print Receipt'}
+            {processing ? 'Processing…' : isUnpaid ? 'Confirm Sale (Unpaid)' : 'Confirm & Print Receipt'}
           </button>
         </div>
       </div>

@@ -20,14 +20,21 @@ export const TransactionService = {
 
     const txnId = uuid()
     const now = nowISO()
+    // Defaults to 'paid' — a credit/utang sale is the exception a cashier has to opt into,
+    // not something older clients or callers that don't send this field need to know about.
+    const paymentStatus = payload.payment_status ?? 'paid'
+    const paidAt = paymentStatus === 'paid' ? now : null
+    const paidBy = paymentStatus === 'paid' ? payload.cashier_id : null
 
     const doCreate = db.transaction(() => {
       db.prepare(`
         INSERT INTO transactions
-          (id, branch_id, cashier_id, customer_id, receipt_number, subtotal, discount_total, total, notes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (id, branch_id, cashier_id, customer_id, receipt_number, subtotal, discount_total, total, notes,
+           payment_status, paid_at, paid_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(txnId, payload.branch_id, payload.cashier_id, payload.customer_id ?? null,
-              receiptNumber, subtotal, discountTotal, total, payload.notes ?? null, now, now)
+              receiptNumber, subtotal, discountTotal, total, payload.notes ?? null,
+              paymentStatus, paidAt, paidBy, now, now)
 
       for (const item of payload.items) {
         const itemId = uuid()
@@ -144,14 +151,33 @@ export const TransactionService = {
     return TransactionService.getById(txnId)!
   },
 
+  /** Mark a completed-but-unpaid sale as paid — any authenticated staff can do this (the same
+   *  people who take payment at checkout are trusted to confirm it was collected later). Records
+   *  who confirmed it and when, so it can be double-checked if the money doesn't actually turn up. */
+  markPaid(txnId: string, userId: string): Transaction {
+    const db = getDb()
+    const txn = TransactionService.getById(txnId)
+    if (!txn) throw new Error('Transaction not found')
+    if (txn.status !== 'completed') throw new Error(`This transaction is ${txn.status} — only completed transactions can be marked paid.`)
+    if (txn.payment_status === 'paid') throw new Error('This transaction is already marked paid.')
+
+    const now = nowISO()
+    db.prepare(`
+      UPDATE transactions SET payment_status='paid', paid_at=?, paid_by=?, updated_at=? WHERE id=?
+    `).run(now, userId, now, txnId)
+
+    return TransactionService.getById(txnId)!
+  },
+
   /** Get full transaction with items and payments */
   getById(id: string): Transaction | null {
     const db = getDb()
     const row = db.prepare(`
-      SELECT t.*, u.full_name as cashier_name, c.full_name as customer_name
+      SELECT t.*, u.full_name as cashier_name, c.full_name as customer_name, pb.full_name as paid_by_name
       FROM transactions t
       LEFT JOIN users u ON u.id = t.cashier_id
       LEFT JOIN customers c ON c.id = t.customer_id
+      LEFT JOIN users pb ON pb.id = t.paid_by
       WHERE t.id = ?
     `).get(id) as (Transaction & { cashier_name?: string; customer_name?: string }) | undefined
 
@@ -174,9 +200,10 @@ export const TransactionService = {
     const db = getDb()
     const dateTo_ = dateTo || dateFrom
     const rows = db.prepare(`
-      SELECT t.*, u.full_name as cashier_name
+      SELECT t.*, u.full_name as cashier_name, pb.full_name as paid_by_name
       FROM transactions t
       LEFT JOIN users u ON u.id = t.cashier_id
+      LEFT JOIN users pb ON pb.id = t.paid_by
       WHERE t.branch_id = ? AND date(t.created_at) BETWEEN ? AND ?
       ORDER BY t.created_at DESC
     `).all(branchId, dateFrom, dateTo_) as (Transaction & { cashier_name?: string })[]

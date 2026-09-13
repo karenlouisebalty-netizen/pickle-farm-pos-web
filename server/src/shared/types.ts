@@ -5,6 +5,10 @@
 export type PaymentMethod = 'cash' | 'gcash' | 'maya' | 'credit_card' | 'bank_transfer'
 export type UserRole = 'owner' | 'manager' | 'cashier'
 export type TxnStatus = 'completed' | 'refunded' | 'voided'
+/** Whether the money for a completed sale has actually been collected yet.
+ *  'unpaid' is for sales made on credit/utang — recorded and inventory-deducted
+ *  like any other sale, just not yet paid for. Defaults to 'paid'. */
+export type PaymentStatus = 'paid' | 'unpaid'
 export type SkillLevel = 'beginner' | 'intermediate' | 'advanced'
 export type MembershipType = 'monthly' | 'quarterly' | 'annual'
 export type MovementType = 'sale' | 'stock_in' | 'stock_out' | 'adjustment' | 'refund'
@@ -117,6 +121,15 @@ export interface Transaction {
   payments: Payment[]
   cashier?: Pick<User, 'id' | 'full_name'>
   customer?: Pick<Customer, 'id' | 'full_name'>
+  /** Has the money for this sale actually been collected? See PaymentStatus. */
+  payment_status: PaymentStatus
+  /** When it was (or was confirmed) paid — set at checkout if paid immediately,
+   *  or when someone later marks an unpaid sale as paid. Null while unpaid. */
+  paid_at?: string | null
+  /** Who confirmed the money was collected — the cashier at checkout, or
+   *  whoever marks it paid later. Null while unpaid. */
+  paid_by?: string | null
+  paid_by_name?: string
 }
 
 export interface OpenPlayRegistration {
@@ -206,13 +219,21 @@ export interface CheckoutPayload {
   payments: Omit<Payment, 'id' | 'transaction_id' | 'created_at'>[]
   discount: CartDiscount
   notes?: string
+  /** Defaults to 'paid' server-side when omitted, so older clients keep working unchanged. */
+  payment_status?: PaymentStatus
 }
 
 export interface DailySummary {
   date: string
+  /** Every completed sale, paid or not — what's "punched" into the system. */
   total_revenue: number
   transaction_count: number
   discount_total: number
+  /** Only the paid portion of total_revenue — the actual money collected. */
+  collected_total: number
+  /** total_revenue minus collected_total — what's still owed on credit/unpaid sales. */
+  outstanding_total: number
+  /** Only counts payments on transactions that are actually paid. */
   payment_breakdown: Record<PaymentMethod, number>
   top_items: Array<{ name: string; qty: number; revenue: number }>
   open_play_count: number

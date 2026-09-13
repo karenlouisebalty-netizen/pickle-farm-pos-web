@@ -169,14 +169,16 @@ export function DashboardScreen() {
       </div>
       <div className="p-4 sm:p-6 space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
-          <MetricCard accent icon="ti-currency-peso" label={`Revenue (${rangeLabel})`} value={fmt(summary?.total_revenue)} sub={`${summary?.transaction_count || 0} transactions`} />
+          <MetricCard accent icon="ti-currency-peso" label={`Total Sales (${rangeLabel})`} value={fmt(summary?.total_revenue)} sub={`${summary?.transaction_count || 0} transactions`} />
+          <MetricCard icon="ti-cash" label="Collected" value={fmt(summary?.collected_total)} sub="Actual money in" />
+          <MetricCard icon="ti-clock" label="Outstanding" value={fmt(summary?.outstanding_total)} sub={(summary?.outstanding_total||0) > 0 ? "Still owed to you" : "All settled"} />
           <MetricCard icon="ti-receipt" label="Transactions" value={String(summary?.transaction_count || 0)} sub={`Completed ${rangeLabel}`} />
           <MetricCard icon="ti-run" label="Open play" value={String(summary?.open_play_count || 0)} sub={`Players ${rangeLabel}`} />
           <MetricCard icon="ti-tournament" label="Court rentals" value={String(summary?.court_rental_count || 0)} sub={`Bookings ${rangeLabel}`} />
           <MetricCard icon="ti-alert-triangle" label="Low stock alerts" value={String(lowStock.length)} sub={lowStock.length > 0 ? "Items need restock" : "All good"} />
           <MetricCard icon="ti-tag" label="Discounts" value={fmt(summary?.discount_total)} sub={`Given ${rangeLabel}`} />
           <MetricCard icon="ti-trending-down" label="Total expenses" value={fmt(expenseSummary.total)} sub={`${rangeLabel}`} />
-          <MetricCard accent icon="ti-coin" label="Net profit" value={fmt((summary?.total_revenue||0) - expenseSummary.total)} sub={`Revenue minus expenses`} />
+          <MetricCard accent icon="ti-coin" label="Net profit" value={fmt((summary?.collected_total||0) - expenseSummary.total)} sub={`Collected minus expenses`} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white rounded-xl border border-border p-4">
@@ -188,6 +190,7 @@ export function DashboardScreen() {
               <div key={txn.id} className="flex items-center gap-2 py-2 border-b border-border last:border-0">
                 <span className="text-xs font-mono text-gray-400 w-16">{txn.receipt_number}</span>
                 <span className="flex-1 text-xs text-gray-700 truncate">{txn.items?.map(i => i.item_name).slice(0,2).join(", ")}</span>
+                {txn.payment_status === 'unpaid' && <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">UNPAID</span>}
                 <span className="text-xs font-medium text-dg">{fmt(txn.total)}</span>
               </div>
             )) : (
@@ -298,18 +301,18 @@ export function DashboardScreen() {
           </div>
         )}
 
-        {summary && summary.total_revenue > 0 && (
+        {summary && summary.collected_total > 0 && (
           <div className="bg-white rounded-xl border border-border p-4">
-            <div className="text-sm font-medium text-dg mb-3">Payment breakdown</div>
+            <div className="text-sm font-medium text-dg mb-3">Payment breakdown <span className="text-xs font-normal text-gray-400">(collected only — excludes unpaid sales)</span></div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {Object.entries(summary.payment_breakdown).filter(([,v]) => v > 0).map(([method, amt]) => (
                 <div key={method} className="text-center">
                   <div className="text-sm font-medium text-dg">{fmt(amt)}</div>
                   <div className="text-xs text-gray-400 capitalize mt-0.5">{method.replace("_"," ")}</div>
                   <div className="mt-1.5 h-1.5 rounded-full bg-surface overflow-hidden">
-                    <div className="h-full rounded-full bg-olive" style={{width:`${Math.round(amt/summary.total_revenue*100)}%`}} />
+                    <div className="h-full rounded-full bg-olive" style={{width:`${Math.round(amt/summary.collected_total*100)}%`}} />
                   </div>
-                  <div className="text-xs text-gray-400 mt-0.5">{Math.round(amt/summary.total_revenue*100)}%</div>
+                  <div className="text-xs text-gray-400 mt-0.5">{Math.round(amt/summary.collected_total*100)}%</div>
                 </div>
               ))}
             </div>

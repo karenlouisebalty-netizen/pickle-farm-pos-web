@@ -10,16 +10,20 @@ export const ReportService = {
       SELECT
         COALESCE(SUM(total), 0) as total_revenue,
         COUNT(*) as transaction_count,
-        COALESCE(SUM(discount_total), 0) as discount_total
+        COALESCE(SUM(discount_total), 0) as discount_total,
+        COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total ELSE 0 END), 0) as collected_total
       FROM transactions
       WHERE branch_id = ? AND date(created_at) BETWEEN ? AND ? AND status = 'completed'
-    `).get(branchId, dateFrom, to) as { total_revenue: number; transaction_count: number; discount_total: number }
+    `).get(branchId, dateFrom, to) as { total_revenue: number; transaction_count: number; discount_total: number; collected_total: number }
 
+    // Only counts payments on transactions that are actually paid — this is "real money in
+    // hand by method", so an unpaid/credit sale shouldn't inflate any method's total until
+    // it's actually settled.
     const payRows = db.prepare(`
       SELECT p.payment_method, COALESCE(SUM(p.amount), 0) as total
       FROM payments p
       JOIN transactions t ON t.id = p.transaction_id
-      WHERE t.branch_id = ? AND date(t.created_at) BETWEEN ? AND ? AND t.status = 'completed'
+      WHERE t.branch_id = ? AND date(t.created_at) BETWEEN ? AND ? AND t.status = 'completed' AND t.payment_status = 'paid'
       GROUP BY p.payment_method
     `).all(branchId, dateFrom, to) as Array<{ payment_method: PaymentMethod; total: number }>
 
@@ -63,6 +67,8 @@ export const ReportService = {
       total_revenue: totals.total_revenue,
       transaction_count: totals.transaction_count,
       discount_total: totals.discount_total,
+      collected_total: totals.collected_total,
+      outstanding_total: totals.total_revenue - totals.collected_total,
       payment_breakdown,
       top_items,
       open_play_count,

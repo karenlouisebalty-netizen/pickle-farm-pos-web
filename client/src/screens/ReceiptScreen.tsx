@@ -49,6 +49,9 @@ export function ReceiptScreen() {
             <div className="text-center font-bold text-[13px] mb-0.5">THE PICKLE FARM</div>
             <div className="text-center text-[9px] text-gray-500">9070 Binambangan St Brgy. 4</div>
             <div className="text-center text-[9px] text-gray-500 mb-2">Indang, Cavite</div>
+            {txn.payment_status === 'unpaid' && (
+              <div className="text-center font-bold text-[11px] border border-dashed border-gray-500 py-0.5 mb-1">*** NOT YET PAID ***</div>
+            )}
 
             <div className="border-t border-dashed border-gray-400 my-1.5" />
             <div className="flex justify-between"><span>Receipt #:</span><span>{txn.receipt_number}</span></div>
@@ -96,8 +99,11 @@ export function ReceiptScreen() {
       {/* Right: controls */}
       <div className="w-56 bg-white border-l border-border p-4 flex flex-col gap-3 print:hidden">
         <p className="text-xs font-medium text-dg">
-          <i className="ti ti-circle-check text-green-600 mr-1" />
-          Sale complete
+          {txn.payment_status === 'unpaid' ? (
+            <><i className="ti ti-clock text-orange-500 mr-1" />Sale complete — <span className="text-orange-600">not yet paid</span></>
+          ) : (
+            <><i className="ti ti-circle-check text-green-600 mr-1" />Sale complete</>
+          )}
         </p>
         <div className="bg-surface rounded-lg p-3 text-xs space-y-1">
           <div className="flex justify-between"><span className="text-gray-500">Receipt</span><span className="font-medium">{txn.receipt_number}</span></div>
@@ -105,7 +111,13 @@ export function ReceiptScreen() {
           {cashPayment && cashPayment.change_given > 0 && (
             <div className="flex justify-between"><span className="text-gray-500">Change</span><span className="font-bold text-dg">{formatPeso(cashPayment.change_given)}</span></div>
           )}
+          {txn.payment_status === 'unpaid' && (
+            <div className="flex justify-between"><span className="text-gray-500">Status</span><span className="font-bold text-orange-600">UNPAID</span></div>
+          )}
         </div>
+        {txn.payment_status === 'unpaid' && (
+          <p className="text-xs text-orange-600 -mt-1">Remember to mark this paid later from Reports or Daily Sales once the money comes in.</p>
+        )}
 
         <button onClick={handlePrint}
           className="w-full py-2.5 bg-dg text-white text-sm font-medium rounded-lg hover:bg-dg-light flex items-center justify-center gap-1.5">

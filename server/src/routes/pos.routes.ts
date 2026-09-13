@@ -41,6 +41,17 @@ posRoutes.post('/transactions/:id/void', requireAuth, requireRole('owner'), (req
   }
 })
 
+// Any authenticated role — whoever's on the register is trusted to confirm money that was
+// owed has now actually come in, same as they're trusted to take payment in the first place.
+posRoutes.post('/transactions/:id/mark-paid', requireAuth, (req, res) => {
+  try {
+    const txn = TransactionService.markPaid(req.params.id, req.session!.user_id)
+    res.json(txn)
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || 'Failed to mark as paid' })
+  }
+})
+
 posRoutes.get('/transactions/:id', requireAuth, (req, res) => {
   const txn = TransactionService.getById(req.params.id)
   if (!txn) return res.status(404).json({ error: 'Transaction not found' })

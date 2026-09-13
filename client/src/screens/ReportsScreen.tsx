@@ -9,19 +9,22 @@ function fmtTime(iso){return new Date(iso).toLocaleTimeString('en-PH',{hour:'2-d
 function exportCSV(date, summary, transactions){
   const rows=[
     ['Date',date],
-    ['Total Revenue',summary?.total_revenue||0],
+    ['Total Sales (punched)',summary?.total_revenue||0],
+    ['Collected (actual money)',summary?.collected_total||0],
+    ['Outstanding (unpaid)',summary?.outstanding_total||0],
     ['Transactions',summary?.transaction_count||0],
     ['Open Play',summary?.open_play_count||0],
     ['Court Rentals',summary?.court_rental_count||0],
     ['Discounts',summary?.discount_total||0],
     [],
-    ['Transaction ID','Time','Items','Payment','Status','Amount','Discount'],
+    ['Transaction ID','Time','Items','Payment','Status','Paid?','Amount','Discount'],
     ...transactions.map(t=>[
       t.id.slice(0,8),
       fmtTime(t.created_at),
       (t.items||[]).map(i=>i.item_name+'x'+i.quantity).join('; '),
       t.payments?.[0]?.payment_method||'',
       t.status,
+      t.payment_status==='unpaid'?'UNPAID':'paid',
       t.total,
       t.discount_total||0
     ])
@@ -138,6 +141,7 @@ export function ReportsScreen(){
   const [voidTarget,setVoidTarget]=useState(null)
   const [voidStage,setVoidStage]=useState(null) // 'pin' | 'confirm'
   const [ownerToken,setOwnerToken]=useState(null)
+  const [markingPaid,setMarkingPaid]=useState(null) // transaction id currently being marked paid
 
   async function load(d){
     if(!session)return
@@ -173,6 +177,18 @@ export function ReportsScreen(){
     load(date)
   }
 
+  async function handleMarkPaid(t){
+    setMarkingPaid(t.id)
+    try{
+      await window.electronAPI.markTransactionPaid(t.id)
+      await load(date)
+    }catch(e){
+      alert(e instanceof Error?e.message:'Failed to mark as paid')
+    }finally{
+      setMarkingPaid(null)
+    }
+  }
+
   const isToday=date===new Date().toISOString().slice(0,10)
 
   return (
@@ -197,7 +213,9 @@ export function ReportsScreen(){
         <div className='p-4 space-y-4'>
           <div className='grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3'>
             {[
-              {label:'Revenue',value:formatPeso(summary?.total_revenue||0),icon:'ti-currency-peso',color:'text-dg'},
+              {label:'Total Sales (punched)',value:formatPeso(summary?.total_revenue||0),icon:'ti-currency-peso',color:'text-dg'},
+              {label:'Collected (actual money)',value:formatPeso(summary?.collected_total||0),icon:'ti-cash',color:'text-green-700'},
+              {label:'Outstanding (unpaid)',value:formatPeso(summary?.outstanding_total||0),icon:'ti-clock',color:(summary?.outstanding_total||0)>0?'text-orange-600':'text-gray-400'},
               {label:'Transactions',value:summary?.transaction_count||0,icon:'ti-receipt',color:'text-olive'},
               {label:'Open Play',value:summary?.open_play_count||0,icon:'ti-run',color:'text-blue-600'},
               {label:'Court Rentals',value:summary?.court_rental_count||0,icon:'ti-tournament',color:'text-maroon'},
@@ -228,6 +246,7 @@ export function ReportsScreen(){
                       {t.customer_name&&<span className='text-xs bg-surface px-1.5 py-0.5 rounded text-gray-600'>{t.customer_name}</span>}
                       {t.status==='voided'&&<span className='text-[10px] font-medium bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full'>VOIDED</span>}
                       {t.status==='refunded'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>REFUNDED</span>}
+                      {t.status==='completed'&&t.payment_status==='unpaid'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>UNPAID</span>}
                     </div>
                     <div className='text-xs text-gray-400 mt-0.5'>{(t.items||[]).slice(0,3).map(i=>i.item_name).join(', ')}{(t.items||[]).length>3?'...':''}</div>
                   </div>
@@ -257,6 +276,12 @@ export function ReportsScreen(){
                         <div className='text-gray-500'>Payment: <span className='font-medium text-dg'>{t.payments?.[0]?.payment_method}</span></div>
                         {t.payments?.[0]?.change_given>0&&<div className='text-gray-500'>Change: <span className='font-medium'>{formatPeso(t.payments[0].change_given)}</span></div>}
                         {t.discount_total>0&&<div className='text-gray-500'>Discount: <span className='font-medium text-maroon'>-{formatPeso(t.discount_total)}</span></div>}
+                        {t.status==='completed'&&(
+                          <div className='text-gray-500'>Status: {t.payment_status==='unpaid'
+                            ? <span className='font-medium text-orange-700'>Not paid yet</span>
+                            : <span className='font-medium text-green-700'>Paid{t.paid_by_name?` — confirmed by ${t.paid_by_name}`:''}</span>}
+                          </div>
+                        )}
                         {t.status!=='completed'&&t.notes&&<div className='text-gray-500'>{t.notes}</div>}
                       </div>
                       <div className='text-right'>
@@ -265,7 +290,12 @@ export function ReportsScreen(){
                       </div>
                     </div>
                     {t.status==='completed'&&(
-                      <div className='mt-2 pt-2 border-t border-border flex justify-end'>
+                      <div className='mt-2 pt-2 border-t border-border flex justify-end gap-2'>
+                        {t.payment_status==='unpaid'&&(
+                          <button onClick={(e)=>{e.stopPropagation();handleMarkPaid(t)}} disabled={markingPaid===t.id} className='text-xs font-medium text-green-700 border border-green-300 rounded-lg px-3 py-1.5 hover:bg-green-50 transition-colors disabled:opacity-50'>
+                            <i className='ti ti-cash mr-1'/>{markingPaid===t.id?'Marking...':'Mark as Paid'}
+                          </button>
+                        )}
                         <button onClick={(e)=>{e.stopPropagation();openVoid(t)}} className='text-xs font-medium text-maroon border border-maroon/30 rounded-lg px-3 py-1.5 hover:bg-red-50 transition-colors'>
                           <i className='ti ti-ban mr-1'/>Void Transaction
                         </button>

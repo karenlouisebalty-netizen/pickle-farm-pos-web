@@ -72,6 +72,8 @@ export const api = {
   createProduct:    (data: { branch_id: string; name: string; category: ProductCategory; price: number; track_inventory: boolean; stock_qty?: number; low_stock_threshold?: number; sku?: string }) => request<Product>('POST', '/pos/products', data),
   getTransaction:   (id: string)                       => request<Transaction>('GET', `/pos/transactions/${id}`),
   listTransactions: (branchId: string, dateFrom: string, dateTo?: string) => request<Transaction[]>('GET', `/pos/transactions${qs({ branchId, dateFrom, dateTo: dateTo ?? dateFrom })}`),
+  // Any signed-in role — flips a credit/unpaid sale to paid once the money actually comes in.
+  markTransactionPaid: (txnId: string) => request<Transaction>('POST', `/pos/transactions/${txnId}/mark-paid`),
 
   // ── Inventory ──
   stockIn:  (productId: string, qty: number, cost?: number, reason?: string) => request<void>('POST', '/inventory/stock-in', { productId, qty, cost, reason }),
