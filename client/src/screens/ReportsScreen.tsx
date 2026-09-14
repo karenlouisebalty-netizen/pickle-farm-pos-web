@@ -247,6 +247,7 @@ export function ReportsScreen(){
                       {t.status==='voided'&&<span className='text-[10px] font-medium bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full'>VOIDED</span>}
                       {t.status==='refunded'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>REFUNDED</span>}
                       {t.status==='completed'&&t.payment_status==='unpaid'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>UNPAID</span>}
+                      {t.is_backdated&&<span className='text-[10px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full flex items-center gap-0.5'><i className='ti ti-history text-[10px]'/>logged</span>}
                     </div>
                     <div className='text-xs text-gray-400 mt-0.5'>{(t.items||[]).slice(0,3).map(i=>i.item_name).join(', ')}{(t.items||[]).length>3?'...':''}</div>
                   </div>

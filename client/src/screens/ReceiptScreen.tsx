@@ -52,6 +52,9 @@ export function ReceiptScreen() {
             {txn.payment_status === 'unpaid' && (
               <div className="text-center font-bold text-[11px] border border-dashed border-gray-500 py-0.5 mb-1">*** NOT YET PAID ***</div>
             )}
+            {txn.is_backdated && (
+              <div className="text-center text-[9px] text-gray-500 mb-1">(logged after the fact)</div>
+            )}
 
             <div className="border-t border-dashed border-gray-400 my-1.5" />
             <div className="flex justify-between"><span>Receipt #:</span><span>{txn.receipt_number}</span></div>
@@ -105,6 +108,9 @@ export function ReceiptScreen() {
             <><i className="ti ti-circle-check text-green-600 mr-1" />Sale complete</>
           )}
         </p>
+        {txn.is_backdated && (
+          <p className="text-xs text-gray-500 -mt-2 flex items-center gap-1"><i className="ti ti-history" /> Logged for {formatDate(new Date(txn.created_at))}, not today</p>
+        )}
         <div className="bg-surface rounded-lg p-3 text-xs space-y-1">
           <div className="flex justify-between"><span className="text-gray-500">Receipt</span><span className="font-medium">{txn.receipt_number}</span></div>
           <div className="flex justify-between"><span className="text-gray-500">Total</span><span className="font-medium text-dg">{formatPeso(txn.total)}</span></div>

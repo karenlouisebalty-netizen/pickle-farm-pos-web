@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCartStore } from '../stores/cartStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { formatPeso } from '../shared/utils'
+import { formatPeso, todayString } from '../shared/utils'
 import { PAYMENT_METHODS } from '../shared/constants'
 import type { PaymentMethod, PaymentStatus, CheckoutPayload } from '../shared/types'
 
@@ -15,11 +15,18 @@ export function CheckoutScreen() {
   const [entered, setEntered] = useState('')
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
+  // Backdating a sale — recording something that already happened, under its real date, so
+  // it lands in that day's report instead of today's. Manager/owner only: a cashier logging
+  // fake past sales is exactly the kind of till-fiddling this should NOT make easy.
+  const canBackdate = session?.role === 'manager' || session?.role === 'owner'
+  const [backdate, setBackdate] = useState(false)
+  const [txnDate, setTxnDate] = useState(todayString())
 
   const totalDue = total()
   const tendered = parseInt(entered || '0', 10)
   const change = tendered - totalDue
   const isUnpaid = paymentStatus === 'unpaid'
+  const isBackdating = canBackdate && backdate
 
   function press(key: string) {
     if (key === 'del') { setEntered(e => e.slice(0, -1)); return }
@@ -44,6 +51,7 @@ export function CheckoutScreen() {
         payments:    [{ payment_method: method, amount: isUnpaid ? totalDue : (method === 'cash' ? tendered : totalDue), change_given: isUnpaid ? 0 : (method === 'cash' ? change : 0) }],
         discount:    { type: 'fixed', value: discountAmount(), reason: discount.reason },
         payment_status: paymentStatus,
+        ...(isBackdating ? { transaction_date: txnDate } : {}),
       }
 
       const txn = await window.electronAPI.checkout(payload)
@@ -113,6 +121,37 @@ export function CheckoutScreen() {
               <span>Total Due</span><span>{formatPeso(totalDue)}</span>
             </div>
           </div>
+
+          {/* Backdate — log a sale that already happened, under its real date */}
+          {canBackdate && (
+            <div className="mt-4">
+              <button
+                onClick={() => setBackdate(b => !b)}
+                className={`w-full flex items-center justify-between p-2.5 rounded-lg border text-xs font-medium transition-all ${backdate ? 'border-olive bg-olive/5 text-dg' : 'border-border text-gray-500 hover:border-olive'}`}
+              >
+                <span className="flex items-center gap-1.5"><i className="ti ti-history text-base" /> This is a past sale</span>
+                <span className={`w-8 h-4.5 rounded-full flex items-center px-0.5 transition-colors ${backdate ? 'bg-olive justify-end' : 'bg-gray-300 justify-start'}`}>
+                  <span className="w-3.5 h-3.5 rounded-full bg-white block" />
+                </span>
+              </button>
+              {backdate && (
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={txnDate}
+                    max={todayString()}
+                    onChange={e => setTxnDate(e.target.value)}
+                    className="flex-1 px-3 py-1.5 rounded-lg border border-border text-sm bg-white outline-none"
+                  />
+                </div>
+              )}
+              {backdate && (
+                <p className="text-xs text-gray-500 mt-1.5">
+                  Logged as {txnDate} instead of today — it'll show up in that day's reports, and be marked as manually logged on the receipt.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Paid or not */}
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-4 mb-2">Payment Status</p>
@@ -216,10 +255,10 @@ export function CheckoutScreen() {
 
           <button
             onClick={handleConfirm}
-            disabled={processing || (!isUnpaid && method === 'cash' && tendered < totalDue)}
+            disabled={processing || (!isUnpaid && method === 'cash' && tendered < totalDue) || (isBackdating && !txnDate)}
             className={`w-full py-3 rounded-xl text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-default active:scale-98 transition-all ${isUnpaid ? 'bg-orange-500 hover:bg-orange-600' : 'bg-dg hover:bg-dg-light'}`}
           >
-            {processing ? 'Processing…' : isUnpaid ? 'Confirm Sale (Unpaid)' : 'Confirm & Print Receipt'}
+            {processing ? 'Processing…' : isBackdating ? `Log Sale for ${txnDate}` : isUnpaid ? 'Confirm Sale (Unpaid)' : 'Confirm & Print Receipt'}
           </button>
         </div>
       </div>

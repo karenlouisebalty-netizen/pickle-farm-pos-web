@@ -19,7 +19,16 @@ export const TransactionService = {
     const total = subtotal - discountTotal
 
     const txnId = uuid()
-    const now = nowISO()
+    const liveNow = nowISO()
+    // A backdated entry (manager/owner only — enforced by the route, which strips this
+    // field for any other role before it gets here) keeps today's real clock time-of-day
+    // but swaps in the date the person typed in, so `date(created_at)` — what every report
+    // query buckets by — lands on that day instead of today.
+    const isBackdated = !!payload.transaction_date
+    if (isBackdated && payload.transaction_date! > liveNow.slice(0, 10)) {
+      throw new Error('Cannot log a sale for a future date')
+    }
+    const now = isBackdated ? `${payload.transaction_date}${liveNow.slice(10)}` : liveNow
     // Defaults to 'paid' — a credit/utang sale is the exception a cashier has to opt into,
     // not something older clients or callers that don't send this field need to know about.
     const paymentStatus = payload.payment_status ?? 'paid'
@@ -30,11 +39,11 @@ export const TransactionService = {
       db.prepare(`
         INSERT INTO transactions
           (id, branch_id, cashier_id, customer_id, receipt_number, subtotal, discount_total, total, notes,
-           payment_status, paid_at, paid_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           payment_status, paid_at, paid_by, is_backdated, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(txnId, payload.branch_id, payload.cashier_id, payload.customer_id ?? null,
               receiptNumber, subtotal, discountTotal, total, payload.notes ?? null,
-              paymentStatus, paidAt, paidBy, now, now)
+              paymentStatus, paidAt, paidBy, isBackdated ? 1 : 0, now, liveNow)
 
       for (const item of payload.items) {
         const itemId = uuid()
@@ -50,7 +59,7 @@ export const TransactionService = {
           const product = db.prepare('SELECT stock_qty, track_inventory FROM products WHERE id = ?').get(item.product_id) as { stock_qty: number; track_inventory: number } | undefined
           if (product?.track_inventory) {
             const newQty = product.stock_qty - item.quantity
-            db.prepare('UPDATE products SET stock_qty = ?, updated_at = ? WHERE id = ?').run(newQty, now, item.product_id)
+            db.prepare('UPDATE products SET stock_qty = ?, updated_at = ? WHERE id = ?').run(newQty, liveNow, item.product_id)
 
             db.prepare(`
               INSERT INTO inventory_movements

@@ -191,6 +191,7 @@ export function DashboardScreen() {
                 <span className="text-xs font-mono text-gray-400 w-16">{txn.receipt_number}</span>
                 <span className="flex-1 text-xs text-gray-700 truncate">{txn.items?.map(i => i.item_name).slice(0,2).join(", ")}</span>
                 {txn.payment_status === 'unpaid' && <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">UNPAID</span>}
+                {txn.is_backdated && <span className="text-[10px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">logged</span>}
                 <span className="text-xs font-medium text-dg">{fmt(txn.total)}</span>
               </div>
             )) : (

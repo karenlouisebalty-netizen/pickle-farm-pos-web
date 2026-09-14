@@ -130,6 +130,10 @@ export interface Transaction {
    *  whoever marks it paid later. Null while unpaid. */
   paid_by?: string | null
   paid_by_name?: string
+  /** True when this sale's date was typed in by a manager/owner (a forgotten entry, or
+   *  recovering lost data) rather than captured live at checkout. Purely informational —
+   *  it still counts normally everywhere (revenue, stock, payment status). */
+  is_backdated: boolean
 }
 
 export interface OpenPlayRegistration {
@@ -221,6 +225,9 @@ export interface CheckoutPayload {
   notes?: string
   /** Defaults to 'paid' server-side when omitted, so older clients keep working unchanged. */
   payment_status?: PaymentStatus
+  /** Manager/owner only (enforced server-side) — log this sale under a past date (YYYY-MM-DD)
+   *  instead of right now. Omit for a normal live sale. */
+  transaction_date?: string
 }
 
 export type WasteReason = 'spoiled' | 'expired' | 'damaged' | 'dropped' | 'other'

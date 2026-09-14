@@ -10,6 +10,10 @@ export const posRoutes = Router()
 posRoutes.post('/checkout', requireAuth, (req, res) => {
   try {
     const payload = req.body as CheckoutPayload
+    // Backdating a sale (transaction_date) is manager/owner only — a cashier's client
+    // shouldn't offer the option in the first place, but strip it here too in case the
+    // field is sent directly, same defense-in-depth pattern as GET /transactions below.
+    if (req.session!.role === 'cashier') delete payload.transaction_date
     const txn = TransactionService.create(payload)
     res.json(txn)
   } catch (e: any) {
