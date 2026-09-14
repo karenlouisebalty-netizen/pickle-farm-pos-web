@@ -41,11 +41,23 @@ authRoutes.patch('/users/:id/deactivate', requireAuth, requireRole('owner'), (re
   res.json({ success: true })
 })
 
-// Owner only — reset a staff member's PIN when they request it.
+// Owner only — reset a staff member's PIN, or change your own. Resetting someone else's
+// PIN needs nothing but owner authority (a staff member forgot theirs and asked). Changing
+// your OWN PIN (the target id is the caller's own) additionally requires proving you know
+// the current one — otherwise anyone who got hold of an already-logged-in owner session
+// could lock the real owner out just by setting a new PIN.
 authRoutes.patch('/users/:id/pin', requireAuth, requireRole('owner'), async (req, res) => {
-  const { pin } = req.body as { pin: string }
+  const { pin, currentPin } = req.body as { pin: string; currentPin?: string }
   if (!pin || !/^\d{4,6}$/.test(pin)) {
     return res.status(400).json({ error: 'PIN must be 4-6 digits' })
+  }
+  if (req.params.id === req.session!.user_id) {
+    if (!currentPin) return res.status(400).json({ error: 'Current PIN is required.' })
+    const ok = await AuthService.verifyPin(req.params.id, currentPin)
+    // 400, not 401 — a 401 on the real stored session token makes the client treat it as
+    // "your session expired" and bounces to /login (see request()'s 401 handling in
+    // lib/api.ts). This is a wrong PIN, not an invalid session; the owner is still logged in.
+    if (!ok) return res.status(400).json({ error: 'Current PIN is incorrect.' })
   }
   await AuthService.changePin(req.params.id, pin)
   res.json({ success: true })

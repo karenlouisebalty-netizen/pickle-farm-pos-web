@@ -153,9 +153,11 @@ export const api = {
   removeStaff: (userId: string, ownerToken: string) =>
     request<{ success: boolean }>('PATCH', `/auth/users/${userId}/deactivate`, undefined, { overrideToken: ownerToken }),
   // ownerToken is optional here too — omitted when called from an already-authenticated
-  // owner session (e.g. the Attendance screen), passed when called pre-auth.
-  changeStaffPin: (userId: string, pin: string, ownerToken?: string) =>
-    request<{ success: boolean }>('PATCH', `/auth/users/${userId}/pin`, { pin }, ownerToken ? { overrideToken: ownerToken } : undefined),
+  // owner session (e.g. the Attendance screen), passed when called pre-auth. currentPin is
+  // only required (and checked server-side) when userId is the caller's own account — an
+  // owner resetting a staff member's forgotten PIN doesn't need to supply it.
+  changeStaffPin: (userId: string, pin: string, opts?: { ownerToken?: string; currentPin?: string }) =>
+    request<{ success: boolean }>('PATCH', `/auth/users/${userId}/pin`, { pin, currentPin: opts?.currentPin }, opts?.ownerToken ? { overrideToken: opts.ownerToken } : undefined),
   // Called from the Attendance screen, which already requires an owner session — no ownerToken needed.
   setStaffDailyRate: (userId: string, dailyRate: number) =>
     request<{ success: boolean }>('PATCH', `/auth/users/${userId}/rate`, { dailyRate }),

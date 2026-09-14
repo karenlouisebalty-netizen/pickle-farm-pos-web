@@ -65,6 +65,16 @@ export const AuthService = {
     db.prepare('UPDATE users SET pin_hash = ?, updated_at = ? WHERE id = ?').run(hash, nowISO(), userId)
   },
 
+  /** Check a PIN against a user's current one, without issuing a session — used to confirm
+   *  someone knows their existing PIN before letting them set a new one. Never throws:
+   *  a missing/inactive user or a wrong PIN both just come back false. */
+  async verifyPin(userId: string, pin: string): Promise<boolean> {
+    const db = getDb()
+    const user = db.prepare('SELECT pin_hash FROM users WHERE id = ? AND is_active = 1').get(userId) as { pin_hash: string } | undefined
+    if (!user) return false
+    return bcrypt.compare(pin, user.pin_hash)
+  },
+
   /** Add a new staff member. Always role 'cashier' — only one owner account.
    *  Defaults to PIN 1234, same as first-run defaults; tell the owner to
    *  pass that along (there's no change-PIN screen yet). */

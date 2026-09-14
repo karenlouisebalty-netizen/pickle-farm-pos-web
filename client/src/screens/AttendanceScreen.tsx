@@ -106,6 +106,91 @@ function ChangePinModal({ user, onClose, onDone }: { user: User; onClose: () => 
   )
 }
 
+/** Change the signed-in owner's own PIN — unlike resetting a staff member's, this requires
+ *  proving you know the CURRENT PIN first (both client-side, for a quick error, and
+ *  server-side, which is what actually enforces it). */
+function ChangeOwnPinModal({ userId, onClose, onDone }: { userId: string; onClose: () => void; onDone: () => void }) {
+  const [currentPin, setCurrentPin] = useState('')
+  const [pin, setPin] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
+
+  async function submit() {
+    if (!currentPin) { setError('Enter your current PIN.'); return }
+    if (pin.length < 4) { setError('New PIN must be at least 4 digits.'); return }
+    if (pin !== confirm) { setError('New PINs don’t match.'); return }
+    setLoading(true)
+    setError('')
+    try {
+      await window.electronAPI.changeStaffPin(userId, pin, { currentPin })
+      setSuccess(true)
+      setTimeout(onDone, 1200)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not change PIN.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-xs mx-4 p-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-base font-medium text-dg">Change Your PIN</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><i className="ti ti-x" /></button>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">Confirm your current PIN, then set a new one.</p>
+
+        {success ? (
+          <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg p-3 text-center">
+            <i className="ti ti-check mr-1" />PIN updated.
+          </div>
+        ) : (
+          <>
+            <input
+              type="password"
+              inputMode="numeric"
+              autoFocus
+              value={currentPin}
+              onChange={e => setCurrentPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="w-full border border-border rounded-lg px-3 py-2 text-center text-lg tracking-widest mb-2 focus:outline-none focus:ring-2 focus:ring-olive"
+              placeholder="Current PIN"
+            />
+            <div className="h-px bg-border my-3" />
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="w-full border border-border rounded-lg px-3 py-2 text-center text-lg tracking-widest mb-2 focus:outline-none focus:ring-2 focus:ring-olive"
+              placeholder="New PIN"
+            />
+            <input
+              type="password"
+              inputMode="numeric"
+              value={confirm}
+              onChange={e => setConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onKeyDown={e => e.key === 'Enter' && submit()}
+              className="w-full border border-border rounded-lg px-3 py-2 text-center text-lg tracking-widest mb-2 focus:outline-none focus:ring-2 focus:ring-olive"
+              placeholder="Confirm New PIN"
+            />
+            {error && <div className="text-red-600 text-xs mb-2 text-center">{error}</div>}
+            <button
+              onClick={submit}
+              disabled={!currentPin || pin.length < 4 || loading}
+              className="w-full h-11 rounded-lg bg-dg text-white font-semibold hover:bg-dg-light transition-colors disabled:opacity-40"
+            >
+              {loading ? 'Saving...' : 'Save New PIN'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /** Inline-editable daily pay rate for one staff member — saves on blur/Enter when changed. */
 function DailyRateInput({ user, onSaved }: { user: User; onSaved: (userId: string, rate: number) => void }) {
   const [value, setValue] = useState(String(user.daily_rate ?? 0))
@@ -154,7 +239,8 @@ function DailyRateInput({ user, onSaved }: { user: User; onSaved: (userId: strin
 }
 
 export function AttendanceScreen() {
-  const branchId = useSessionStore(s => s.session?.branch_id) || 'branch-pf-001'
+  const session = useSessionStore(s => s.session)
+  const branchId = session?.branch_id || 'branch-pf-001'
   const [tab, setTab] = useState<'summary' | 'photos' | 'staff'>('summary')
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [summary, setSummary] = useState<AttendanceSummaryRow[]>([])
@@ -164,6 +250,7 @@ export function AttendanceScreen() {
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState<AttendanceLog | null>(null)
   const [pinTarget, setPinTarget] = useState<User | null>(null)
+  const [ownPinModalOpen, setOwnPinModalOpen] = useState(false)
 
   function refreshStaff() {
     window.electronAPI.listUsers(branchId).then(setStaffList)
@@ -305,7 +392,20 @@ export function AttendanceScreen() {
             )}
           </>
         ) : (
-          <div className="bg-white rounded-xl shadow-card border border-border overflow-hidden">
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl shadow-card border border-border p-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-dg">Your PIN</div>
+                <div className="text-xs text-gray-500 mt-0.5">{session?.full_name} (Owner) — changing it requires your current PIN.</div>
+              </div>
+              <button
+                onClick={() => setOwnPinModalOpen(true)}
+                className="text-xs font-medium text-olive hover:opacity-80 flex-shrink-0"
+              >
+                Change PIN
+              </button>
+            </div>
+            <div className="bg-white rounded-xl shadow-card border border-border overflow-hidden">
             {staffList.filter(u => u.role !== 'owner').length === 0 ? (
               <p className="text-sm text-gray-500 p-4">No staff yet — add one from the Time Clock tab on the sign-in screen.</p>
             ) : (
@@ -344,6 +444,7 @@ export function AttendanceScreen() {
               </table>
               </div>
             )}
+            </div>
           </div>
         )}
       </div>
@@ -354,6 +455,13 @@ export function AttendanceScreen() {
           user={pinTarget}
           onClose={() => setPinTarget(null)}
           onDone={() => setPinTarget(null)}
+        />
+      )}
+      {ownPinModalOpen && session && (
+        <ChangeOwnPinModal
+          userId={session.user_id}
+          onClose={() => setOwnPinModalOpen(false)}
+          onDone={() => setOwnPinModalOpen(false)}
         />
       )}
     </div>
