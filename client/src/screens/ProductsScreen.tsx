@@ -6,6 +6,10 @@ const CAT_LABELS = {
   food_drinks:'Food & Drinks', merchandise:'Merchandise', coaching:'Coaching'
 }
 const CATS = ['open_play','court_rental','rental','food_drinks','merchandise','coaching']
+// Only these get physical daily counts (Daily Count / Waste / Reconciliation) — everything
+// else is a service/booking, not shelf stock. Used to default the "Track inventory" checkbox
+// so a new Court Rental etc. doesn't accidentally end up on those screens.
+const CONSUMABLE_CATS = ['food_drinks', 'merchandise']
 
 export function ProductsScreen() {
   const session = useSessionStore(s => s.session)
@@ -134,7 +138,11 @@ export function ProductsScreen() {
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Category</label>
-                <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
+                <select value={newCategory} onChange={e => {
+                    const cat = e.target.value
+                    setNewCategory(cat)
+                    setNewTrackInventory(CONSUMABLE_CATS.includes(cat))
+                  }}
                   className="w-full px-3 py-2 rounded-lg border border-border text-sm outline-none focus:border-olive bg-white">
                   {CATS.map(c => <option key={c} value={c}>{CAT_LABELS[c]}</option>)}
                 </select>
