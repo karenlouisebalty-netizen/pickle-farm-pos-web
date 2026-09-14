@@ -195,6 +195,23 @@ function DailyCountTab({ products, session }) {
     })
   }, [showCarryover, tracked, prevEnd, inputs])
 
+  // A mismatch here means what staff physically counted doesn't match what the system
+  // currently shows in stock. System Stock moves the instant a POS sale happens (see
+  // TransactionService.create), and `products` is kept fresh with a background refresh
+  // (see InventoryScreen below), so this is always checked against a live number — not
+  // whatever it happened to be when this screen was first opened. Valid for both Beginning
+  // and End of Shift counts (unlike the carryover check above, which only makes sense for
+  // Beginning).
+  const systemStockMismatches = useMemo(() => {
+    if (!showSystemStock) return []
+    return tracked.filter((p: any) => {
+      const cur = inputs[p.id]
+      if (cur === '' || cur == null) return false
+      const curNum = parseInt(String(cur), 10)
+      return !isNaN(curNum) && curNum !== p.stock_qty
+    })
+  }, [showSystemStock, tracked, inputs])
+
   const colCount = 2 + (showSystemStock ? 1 : 0) + (showCarryover ? 1 : 0)
 
   async function handleSave() {
@@ -226,8 +243,19 @@ function DailyCountTab({ products, session }) {
             <i className="ti ti-alert-triangle text-sm" />{carryoverMismatches.length} item{carryoverMismatches.length === 1 ? '' : 's'} don't match yesterday's ending count
           </div>
         )}
+        {showSystemStock && systemStockMismatches.length > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 font-medium">
+            <i className="ti ti-alert-triangle text-sm" />{systemStockMismatches.length} item{systemStockMismatches.length === 1 ? '' : 's'} don't match system stock
+          </div>
+        )}
       </div>
       <p className="text-xs text-gray-500">Enter the actual number of each item you can physically count right now. Everything else — consumption, tally against sales, waste — is calculated automatically once both counts are in.</p>
+      {showSystemStock && (
+        <p className="text-xs text-gray-500">
+          <i className="ti ti-refresh text-sm align-[-2px] mr-1" />
+          "System Stock" updates the instant a POS sale happens, and refreshes on this screen automatically — it should match what you physically count right now, for either count. Rows in red don't match, which can mean shrinkage, a miscount, or stock that left without going through POS.
+        </p>
+      )}
       {showCarryover && (
         <p className="text-xs text-gray-500">
           <i className="ti ti-arrows-diff text-sm align-[-2px] mr-1" />
@@ -250,15 +278,22 @@ function DailyCountTab({ products, session }) {
             : tracked.map((p: any) => {
               const py = prevEnd[p.id]
               const curNum = inputs[p.id] !== '' && inputs[p.id] != null ? parseInt(String(inputs[p.id]), 10) : null
-              const mismatch = showCarryover && py != null && curNum != null && !isNaN(curNum) && curNum !== py
+              const carryoverMismatch = showCarryover && py != null && curNum != null && !isNaN(curNum) && curNum !== py
+              const sysMismatch = showSystemStock && curNum != null && !isNaN(curNum) && curNum !== p.stock_qty
+              const rowFlagged = carryoverMismatch || sysMismatch
               return (
-                <tr key={p.id} className={`border-b border-border last:border-0 ${mismatch ? 'bg-red-50/50' : ''}`}>
+                <tr key={p.id} className={`border-b border-border last:border-0 ${rowFlagged ? 'bg-red-50/50' : ''}`}>
                   <td className="px-4 py-2.5 font-medium text-dg text-sm">{p.name}</td>
-                  {showSystemStock && <td className="px-4 py-2.5 text-right text-xs text-gray-400">{p.stock_qty}</td>}
+                  {showSystemStock && (
+                    <td className={`px-4 py-2.5 text-right text-xs ${sysMismatch ? 'text-red-700 font-medium' : 'text-gray-400'}`}>
+                      {p.stock_qty}
+                      {sysMismatch && <span className="ml-1">({curNum! > p.stock_qty ? '+' : ''}{curNum! - p.stock_qty})</span>}
+                    </td>
+                  )}
                   {showCarryover && (
-                    <td className={`px-4 py-2.5 text-right text-xs ${mismatch ? 'text-red-700 font-medium' : 'text-gray-400'}`}>
+                    <td className={`px-4 py-2.5 text-right text-xs ${carryoverMismatch ? 'text-red-700 font-medium' : 'text-gray-400'}`}>
                       {py != null ? py : <span className="text-gray-300">no count</span>}
-                      {mismatch && <span className="ml-1">({curNum! > py ? '+' : ''}{curNum! - py})</span>}
+                      {carryoverMismatch && <span className="ml-1">({curNum! > py ? '+' : ''}{curNum! - py})</span>}
                     </td>
                   )}
                   <td className="px-4 py-2.5 text-right">
@@ -266,7 +301,7 @@ function DailyCountTab({ products, session }) {
                       type="number" min={0}
                       value={inputs[p.id] ?? ''}
                       onChange={e => setInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
-                      className={`w-24 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-olive ${mismatch ? 'border-red-300' : 'border-border'}`}
+                      className={`w-24 border rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-olive ${rowFlagged ? 'border-red-300' : 'border-border'}`}
                     />
                   </td>
                 </tr>
@@ -391,14 +426,25 @@ function ReconciliationTab({ session }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
 
-  async function load() {
+  async function load(showSpinner = true) {
     if (!session) return
-    setLoading(true)
-    const data = await window.electronAPI.getReconciliation(session.branch_id, date)
-    setRows(data)
-    setLoading(false)
+    if (showSpinner) setLoading(true)
+    try {
+      const data = await window.electronAPI.getReconciliation(session.branch_id, date)
+      setRows(data)
+    } finally {
+      if (showSpinner) setLoading(false)
+    }
   }
   useEffect(() => { load() }, [session, date])
+
+  // "Sold (POS)" is computed fresh from inventory movements every time this loads, but if
+  // someone leaves this tab open while sales keep happening, refresh it quietly in the
+  // background so the variance shown is always against today's actual sales so far.
+  useEffect(() => {
+    const id = setInterval(() => load(false), 30000)
+    return () => clearInterval(id)
+  }, [session, date])
 
   const varianceCount = (rows as any[]).filter(r => r.status === 'variance').length
 
@@ -464,15 +510,37 @@ export function InventoryScreen() {
   const [movementsModal, setMovementsModal] = useState<any>(null)
   const [tab, setTab] = useState<'products' | 'count' | 'waste' | 'reconciliation'>('products')
 
-  async function loadProducts() {
+  async function loadProducts(showSpinner = true) {
     if (!session) return
-    setLoading(true)
-    const all = await window.electronAPI.getProducts(session.branch_id)
-    setProducts(all)
-    setLoading(false)
+    if (showSpinner) setLoading(true)
+    try {
+      const all = await window.electronAPI.getProducts(session.branch_id)
+      setProducts(all)
+    } finally {
+      if (showSpinner) setLoading(false)
+    }
   }
 
   useEffect(() => { loadProducts() }, [session])
+
+  // Keep stock numbers current automatically — a manager doing a Daily Count, checking
+  // Reconciliation, or just glancing at Products needs these to reflect sales that just
+  // happened on POS, not whatever they were when this screen was first opened. Runs quietly
+  // in the background (no loading spinner) so it doesn't interrupt someone mid-count.
+  useEffect(() => {
+    const id = setInterval(() => loadProducts(false), 30000)
+    return () => clearInterval(id)
+  }, [session])
+
+  // Also catch up the moment someone switches back to this tab/window — the interval alone
+  // could leave a 30s-stale number sitting there right when they glance at the screen.
+  useEffect(() => {
+    function onVisible() {
+      if (document.visibilityState === 'visible') loadProducts(false)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [session])
 
   const filtered = (products as any[]).filter(p => {
     if (category !== 'all' && p.category !== category) return false
