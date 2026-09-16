@@ -248,6 +248,7 @@ export function ReportsScreen(){
                       {t.status==='refunded'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>REFUNDED</span>}
                       {t.status==='completed'&&t.payment_status==='unpaid'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>UNPAID</span>}
                       {t.is_backdated&&<span className='text-[10px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full flex items-center gap-0.5'><i className='ti ti-history text-[10px]'/>logged</span>}
+                      {t.is_advance_payment&&<span className='text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5'><i className='ti ti-calendar-time text-[10px]'/>advance</span>}
                     </div>
                     <div className='text-xs text-gray-400 mt-0.5'>{(t.items||[]).slice(0,3).map(i=>i.item_name).join(', ')}{(t.items||[]).length>3?'...':''}</div>
                   </div>
@@ -264,7 +265,7 @@ export function ReportsScreen(){
                       <tbody>
                         {(t.items||[]).map((item,i)=>(
                           <tr key={i} className='border-b border-border last:border-0'>
-                            <td className='py-1 text-dg'>{item.item_name}{item.notes&&item.notes.startsWith('{')&&(()=>{try{const b=JSON.parse(item.notes);return <span className='text-olive ml-1'>({b.court} {b.startTime}-{b.endTime})</span>}catch{return null}})()}</td>
+                            <td className='py-1 text-dg'>{item.item_name}{item.notes&&item.notes.startsWith('{')&&(()=>{try{const b=JSON.parse(item.notes);return <span className='text-olive ml-1'>({b.court} {b.startTime}-{b.endTime})</span>}catch{return null}})()}{item.customer_names&&item.customer_names.length>0&&<span className='text-gray-400 ml-1'>— {item.customer_names.join(', ')}</span>}</td>
                             <td className='py-1 text-right text-gray-500'>{item.quantity}</td>
                             <td className='py-1 text-right text-gray-500'>{formatPeso(item.unit_price)}</td>
                             <td className='py-1 text-right font-medium'>{formatPeso(item.line_total)}</td>

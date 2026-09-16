@@ -46,6 +46,7 @@ export const useCartStore = create<CartStore>((set, get) => ({
         quantity:   1,
         discount:   0,
         line_total: product.price,
+        category:   product.category,
       }
       return { items: [...state.items, newItem] }
     })

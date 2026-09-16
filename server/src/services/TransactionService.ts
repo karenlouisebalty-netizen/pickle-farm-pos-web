@@ -3,6 +3,20 @@ import { getDb } from '../db/database'
 import { generateReceiptNumber, nowISO, calcDiscount } from '../shared/utils'
 import type { Transaction, CheckoutPayload } from '../shared/types'
 
+/** transaction_items.customer_names is stored as a JSON string in SQLite — turn it back
+ *  into a plain string array (or drop it) before handing rows back to the client. */
+function parseItemNames(items: Transaction['items']): Transaction['items'] {
+  return items.map(item => {
+    const raw = (item as unknown as { customer_names?: unknown }).customer_names
+    if (typeof raw !== 'string') return item
+    try {
+      return { ...item, customer_names: JSON.parse(raw) }
+    } catch {
+      return { ...item, customer_names: undefined }
+    }
+  })
+}
+
 export const TransactionService = {
   /** Process a new sale. Atomic SQLite transaction. */
   create(payload: CheckoutPayload): Transaction {
@@ -20,40 +34,75 @@ export const TransactionService = {
 
     const txnId = uuid()
     const liveNow = nowISO()
-    // A backdated entry (manager/owner only — enforced by the route, which strips this
-    // field for any other role before it gets here) keeps today's real clock time-of-day
-    // but swaps in the date the person typed in, so `date(created_at)` — what every report
-    // query buckets by — lands on that day instead of today.
-    const isBackdated = !!payload.transaction_date
-    if (isBackdated && payload.transaction_date! > liveNow.slice(0, 10)) {
-      throw new Error('Cannot log a sale for a future date')
+    // A custom date (manager/owner only — enforced by the route, which strips these fields
+    // for any other role before it gets here) swaps in the date/time the person typed in, so
+    // `date(created_at)` — what every report query buckets by — lands on that day instead of
+    // today. A PAST moment backdates the sale (a forgotten entry); a FUTURE one makes it an
+    // advance payment (money collected today for a sale that lands in that future date's
+    // reports instead). transaction_time is optional — when omitted, today's real
+    // time-of-day is kept, exactly like the original backdate-only behavior.
+    const hasCustomDate = !!payload.transaction_date
+    let now = liveNow
+    if (hasCustomDate) {
+      if (payload.transaction_time) {
+        if (!/^\d{2}:\d{2}$/.test(payload.transaction_time)) {
+          throw new Error('Invalid time — expected HH:MM')
+        }
+        // The business only ever operates in the Philippines (UTC+8, no DST) — anchoring
+        // the picked wall-clock time to that fixed offset converts it to the correct UTC
+        // instant, so it displays back as the exact time that was typed in, regardless of
+        // what timezone this server process itself happens to run in.
+        const parsed = new Date(`${payload.transaction_date}T${payload.transaction_time}:00+08:00`)
+        if (isNaN(parsed.getTime())) throw new Error('Invalid date/time')
+        now = parsed.toISOString()
+      } else {
+        // No explicit time given — keep today's real time-of-day (original backdate behavior).
+        now = `${payload.transaction_date}${liveNow.slice(10)}`
+      }
     }
-    const now = isBackdated ? `${payload.transaction_date}${liveNow.slice(10)}` : liveNow
+    const isBackdated = hasCustomDate && now < liveNow
+    const isAdvancePayment = hasCustomDate && now > liveNow
     // Defaults to 'paid' — a credit/utang sale is the exception a cashier has to opt into,
     // not something older clients or callers that don't send this field need to know about.
     const paymentStatus = payload.payment_status ?? 'paid'
     const paidAt = paymentStatus === 'paid' ? now : null
     const paidBy = paymentStatus === 'paid' ? payload.cashier_id : null
 
+    // Open Play / Court Rental lines need one name per unit of quantity — validated up front,
+    // before anything is written, so a bad request fails clean instead of half-committing.
+    for (const item of payload.items) {
+      if (!item.product_id) continue
+      const product = db.prepare('SELECT category FROM products WHERE id = ?').get(item.product_id) as { category: string } | undefined
+      if (product && (product.category === 'open_play' || product.category === 'court_rental')) {
+        const names = (item.customer_names ?? []).map(n => n.trim()).filter(Boolean)
+        if (names.length !== item.quantity) {
+          throw new Error(`Please provide ${item.quantity} name(s) for ${item.item_name}.`)
+        }
+      }
+    }
+
     const doCreate = db.transaction(() => {
       db.prepare(`
         INSERT INTO transactions
           (id, branch_id, cashier_id, customer_id, receipt_number, subtotal, discount_total, total, notes,
-           payment_status, paid_at, paid_by, is_backdated, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           payment_status, paid_at, paid_by, is_backdated, is_advance_payment, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(txnId, payload.branch_id, payload.cashier_id, payload.customer_id ?? null,
               receiptNumber, subtotal, discountTotal, total, payload.notes ?? null,
-              paymentStatus, paidAt, paidBy, isBackdated ? 1 : 0, now, liveNow)
+              paymentStatus, paidAt, paidBy, isBackdated ? 1 : 0, isAdvancePayment ? 1 : 0, now, liveNow)
 
       for (const item of payload.items) {
         const itemId = uuid()
         const lineTotal = item.unit_price * item.quantity - item.discount
+        const namesJson = item.customer_names && item.customer_names.length > 0
+          ? JSON.stringify(item.customer_names.map(n => n.trim()).filter(Boolean))
+          : null
         db.prepare(`
           INSERT INTO transaction_items
-            (id, transaction_id, product_id, item_name, unit_price, quantity, discount, line_total, notes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, transaction_id, product_id, item_name, unit_price, quantity, discount, line_total, notes, customer_names)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(itemId, txnId, item.product_id ?? null, item.item_name,
-               item.unit_price, item.quantity, item.discount, lineTotal, item.notes ?? null)
+               item.unit_price, item.quantity, item.discount, lineTotal, item.notes ?? null, namesJson)
 
         if (item.product_id) {
           const product = db.prepare('SELECT stock_qty, track_inventory FROM products WHERE id = ?').get(item.product_id) as { stock_qty: number; track_inventory: number } | undefined
@@ -192,7 +241,7 @@ export const TransactionService = {
 
     if (!row) return null
 
-    const items = db.prepare('SELECT * FROM transaction_items WHERE transaction_id = ? ORDER BY rowid').all(id) as Transaction['items']
+    const items = parseItemNames(db.prepare('SELECT * FROM transaction_items WHERE transaction_id = ? ORDER BY rowid').all(id) as Transaction['items'])
     const payments = db.prepare('SELECT * FROM payments WHERE transaction_id = ? ORDER BY created_at').all(id) as Transaction['payments']
 
     return {
@@ -218,7 +267,7 @@ export const TransactionService = {
     `).all(branchId, dateFrom, dateTo_) as (Transaction & { cashier_name?: string })[]
 
     return rows.map(row => {
-      const items = db.prepare('SELECT * FROM transaction_items WHERE transaction_id = ?').all(row.id) as Transaction['items']
+      const items = parseItemNames(db.prepare('SELECT * FROM transaction_items WHERE transaction_id = ?').all(row.id) as Transaction['items'])
       const payments = db.prepare('SELECT * FROM payments WHERE transaction_id = ?').all(row.id) as Transaction['payments']
       return { ...row, items, payments, cashier: { id: row.cashier_id, full_name: row.cashier_name ?? 'Staff' } }
     })

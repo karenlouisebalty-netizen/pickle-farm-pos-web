@@ -92,6 +92,9 @@ export interface TransactionItem {
   discount: number
   line_total: number
   notes?: string
+  /** One name per unit of quantity, for Open Play / Court Rental lines. Stored as JSON in
+   *  the DB; the server parses it back into a plain string array before sending it out. */
+  customer_names?: string[]
 }
 
 export interface Payment {
@@ -134,6 +137,10 @@ export interface Transaction {
    *  recovering lost data) rather than captured live at checkout. Purely informational —
    *  it still counts normally everywhere (revenue, stock, payment status). */
   is_backdated: boolean
+  /** True when this sale was assigned a FUTURE date/time — an advance payment. The money
+   *  was collected today, but the sale lands in the assigned date's reports instead of
+   *  today's. Mutually exclusive with is_backdated (one custom date is either past or future). */
+  is_advance_payment: boolean
 }
 
 export interface OpenPlayRegistration {
@@ -207,6 +214,13 @@ export interface CartItem {
   discount: number
   line_total: number
   notes?: string
+  /** Client-side only (not persisted as its own column) — the product's category, kept on
+   *  the cart line so Checkout can tell which items need names without re-fetching products. */
+  category?: ProductCategory
+  /** One name per unit of quantity, required at checkout for Open Play / Court Rental items
+   *  (2x Open Play → 2 names) so there's a record of who played/booked even for a quick sale
+   *  rung up straight from the product grid. Omitted/ignored for every other category. */
+  customer_names?: string[]
 }
 
 export interface CartDiscount {
@@ -225,9 +239,15 @@ export interface CheckoutPayload {
   notes?: string
   /** Defaults to 'paid' server-side when omitted, so older clients keep working unchanged. */
   payment_status?: PaymentStatus
-  /** Manager/owner only (enforced server-side) — log this sale under a past date (YYYY-MM-DD)
-   *  instead of right now. Omit for a normal live sale. */
+  /** Manager/owner only (enforced server-side) — log this sale under a different date
+   *  (YYYY-MM-DD) instead of right now. A PAST date backdates the sale (a forgotten entry);
+   *  a FUTURE date makes it an advance payment (money collected today for a sale that lands
+   *  in that future date's reports instead). Omit for a normal live sale. */
   transaction_date?: string
+  /** Optional 24-hour "HH:MM", paired with transaction_date — the exact time to assign,
+   *  as picked in the browser's local clock. Omit to keep today's real time-of-day (the
+   *  original backdate behavior, still fine when only the date matters). */
+  transaction_time?: string
 }
 
 export type WasteReason = 'spoiled' | 'expired' | 'damaged' | 'dropped' | 'other'

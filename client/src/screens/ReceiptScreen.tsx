@@ -55,6 +55,9 @@ export function ReceiptScreen() {
             {txn.is_backdated && (
               <div className="text-center text-[9px] text-gray-500 mb-1">(logged after the fact)</div>
             )}
+            {txn.is_advance_payment && (
+              <div className="text-center text-[9px] text-gray-500 mb-1">(advance payment — paid today)</div>
+            )}
 
             <div className="border-t border-dashed border-gray-400 my-1.5" />
             <div className="flex justify-between"><span>Receipt #:</span><span>{txn.receipt_number}</span></div>
@@ -65,9 +68,14 @@ export function ReceiptScreen() {
             <div className="border-t border-dashed border-gray-400 my-1.5" />
 
             {txn.items.map(item => (
-              <div key={item.id} className="flex justify-between">
-                <span className="flex-1 mr-1">{item.quantity > 1 ? `${item.item_name} x${item.quantity}` : item.item_name}</span>
-                <span>{formatPeso(item.line_total)}</span>
+              <div key={item.id}>
+                <div className="flex justify-between">
+                  <span className="flex-1 mr-1">{item.quantity > 1 ? `${item.item_name} x${item.quantity}` : item.item_name}</span>
+                  <span>{formatPeso(item.line_total)}</span>
+                </div>
+                {item.customer_names && item.customer_names.length > 0 && (
+                  <div className="text-[9px] text-gray-500">{item.customer_names.join(', ')}</div>
+                )}
               </div>
             ))}
 
@@ -110,6 +118,9 @@ export function ReceiptScreen() {
         </p>
         {txn.is_backdated && (
           <p className="text-xs text-gray-500 -mt-2 flex items-center gap-1"><i className="ti ti-history" /> Logged for {formatDate(new Date(txn.created_at))}, not today</p>
+        )}
+        {txn.is_advance_payment && (
+          <p className="text-xs text-gray-500 -mt-2 flex items-center gap-1"><i className="ti ti-calendar-time" /> Paid today — for {formatDate(new Date(txn.created_at))}, {formatTime(new Date(txn.created_at))}</p>
         )}
         <div className="bg-surface rounded-lg p-3 text-xs space-y-1">
           <div className="flex justify-between"><span className="text-gray-500">Receipt</span><span className="font-medium">{txn.receipt_number}</span></div>

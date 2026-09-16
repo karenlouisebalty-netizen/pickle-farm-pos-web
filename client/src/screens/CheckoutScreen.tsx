@@ -15,18 +15,41 @@ export function CheckoutScreen() {
   const [entered, setEntered] = useState('')
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
-  // Backdating a sale — recording something that already happened, under its real date, so
-  // it lands in that day's report instead of today's. Manager/owner only: a cashier logging
-  // fake past sales is exactly the kind of till-fiddling this should NOT make easy.
-  const canBackdate = session?.role === 'manager' || session?.role === 'owner'
-  const [backdate, setBackdate] = useState(false)
+  // Setting a different date/time for a sale — either backdating it (recording something
+  // that already happened, under its real date, so it lands in that day's report instead of
+  // today's) or logging an advance payment (money collected today for something happening
+  // on a future date, so it lands in THAT date's report instead of today's). Manager/owner
+  // only: a cashier freely shifting when a sale shows up in reports is exactly the kind of
+  // till-fiddling this should NOT make easy.
+  const canSetDate = session?.role === 'manager' || session?.role === 'owner'
+  const [customDate, setCustomDate] = useState(false)
   const [txnDate, setTxnDate] = useState(todayString())
+  const [txnTime, setTxnTime] = useState(() => new Date().toTimeString().slice(0, 5))
 
   const totalDue = total()
   const tendered = parseInt(entered || '0', 10)
   const change = tendered - totalDue
   const isUnpaid = paymentStatus === 'unpaid'
-  const isBackdating = canBackdate && backdate
+  const isCustomDating = canSetDate && customDate
+  // Client-side estimate only, for the confirm-button label — the server independently
+  // decides is_backdated vs is_advance_payment from the same date/time once it arrives.
+  const willBeAdvance = isCustomDating && txnDate && txnTime && new Date(`${txnDate}T${txnTime}`) > new Date()
+
+  // Open Play / Court Rental lines each need one name per unit of quantity.
+  const nameItems = items.filter(i => i.category === 'open_play' || i.category === 'court_rental')
+  const [names, setNames] = useState<Record<string, string[]>>({})
+  function namesFor(productId: string, qty: number): string[] {
+    const existing = names[productId] ?? []
+    return Array.from({ length: qty }, (_, i) => existing[i] ?? '')
+  }
+  function setName(productId: string, index: number, qty: number, value: string) {
+    setNames(prev => {
+      const arr = namesFor(productId, qty)
+      arr[index] = value
+      return { ...prev, [productId]: arr }
+    })
+  }
+  const namesComplete = nameItems.every(i => namesFor(i.product_id, i.quantity).every(n => n.trim().length > 0))
 
   function press(key: string) {
     if (key === 'del') { setEntered(e => e.slice(0, -1)); return }
@@ -44,18 +67,25 @@ export function CheckoutScreen() {
       const payload: CheckoutPayload = {
         branch_id:   session.branch_id,
         cashier_id:  session.user_id,
-        items:       items.map(({ product_id, item_name, unit_price, quantity, discount: d, notes }) =>
-                       ({ product_id, item_name, unit_price, quantity, discount: d, notes })),
+        items:       items.map(({ product_id, item_name, unit_price, quantity, discount: d, notes, category }) =>
+                       ({
+                         product_id, item_name, unit_price, quantity, discount: d, notes,
+                         ...((category === 'open_play' || category === 'court_rental')
+                           ? { customer_names: namesFor(product_id, quantity) }
+                           : {}),
+                       })),
         // Unpaid sales still record the intended method and the full amount due — no cash
         // was actually tendered, and there's no change to give since nothing was paid yet.
         payments:    [{ payment_method: method, amount: isUnpaid ? totalDue : (method === 'cash' ? tendered : totalDue), change_given: isUnpaid ? 0 : (method === 'cash' ? change : 0) }],
         discount:    { type: 'fixed', value: discountAmount(), reason: discount.reason },
         payment_status: paymentStatus,
-        ...(isBackdating ? { transaction_date: txnDate } : {}),
+        ...(isCustomDating ? { transaction_date: txnDate, transaction_time: txnTime } : {}),
       }
 
       const txn = await window.electronAPI.checkout(payload)
-      // Create reservations for any court rental items
+      // Create reservations for any court rental items — booked under the name collected
+      // above (the first name, when the line has more than one), falling back to Walk-in
+      // if for some reason none was captured.
       const courtItems=payload.items.filter(i=>i.notes&&i.notes.startsWith('{"court"'))
       for(const item of courtItems){
         try{
@@ -66,7 +96,7 @@ export function CheckoutScreen() {
             reservation_date:b.date,
             start_time:b.startTime,
             end_time:b.endTime,
-            booker_name:payload.customer_name||'Walk-in',
+            booker_name:(item.customer_names&&item.customer_names[0])||'Walk-in',
             status:'confirmed',
             deposit_amount:0,
             is_recurring:false,
@@ -122,34 +152,65 @@ export function CheckoutScreen() {
             </div>
           </div>
 
-          {/* Backdate — log a sale that already happened, under its real date */}
-          {canBackdate && (
+          {/* Custom date/time — backdate a past sale, or log an advance payment for a future one */}
+          {canSetDate && (
             <div className="mt-4">
               <button
-                onClick={() => setBackdate(b => !b)}
-                className={`w-full flex items-center justify-between p-2.5 rounded-lg border text-xs font-medium transition-all ${backdate ? 'border-olive bg-olive/5 text-dg' : 'border-border text-gray-500 hover:border-olive'}`}
+                onClick={() => setCustomDate(b => !b)}
+                className={`w-full flex items-center justify-between p-2.5 rounded-lg border text-xs font-medium transition-all ${customDate ? 'border-olive bg-olive/5 text-dg' : 'border-border text-gray-500 hover:border-olive'}`}
               >
-                <span className="flex items-center gap-1.5"><i className="ti ti-history text-base" /> This is a past sale</span>
-                <span className={`w-8 h-4.5 rounded-full flex items-center px-0.5 transition-colors ${backdate ? 'bg-olive justify-end' : 'bg-gray-300 justify-start'}`}>
+                <span className="flex items-center gap-1.5"><i className="ti ti-calendar-time text-base" /> Different date/time (past sale or advance payment)</span>
+                <span className={`w-8 h-4.5 rounded-full flex items-center px-0.5 transition-colors ${customDate ? 'bg-olive justify-end' : 'bg-gray-300 justify-start'}`}>
                   <span className="w-3.5 h-3.5 rounded-full bg-white block" />
                 </span>
               </button>
-              {backdate && (
+              {customDate && (
                 <div className="mt-2 flex items-center gap-2">
                   <input
                     type="date"
                     value={txnDate}
-                    max={todayString()}
                     onChange={e => setTxnDate(e.target.value)}
                     className="flex-1 px-3 py-1.5 rounded-lg border border-border text-sm bg-white outline-none"
                   />
+                  <input
+                    type="time"
+                    value={txnTime}
+                    onChange={e => setTxnTime(e.target.value)}
+                    className="w-28 px-3 py-1.5 rounded-lg border border-border text-sm bg-white outline-none"
+                  />
                 </div>
               )}
-              {backdate && (
+              {customDate && (
                 <p className="text-xs text-gray-500 mt-1.5">
-                  Logged as {txnDate} instead of today — it'll show up in that day's reports, and be marked as manually logged on the receipt.
+                  {willBeAdvance
+                    ? `Advance payment — paid today, but this sale will show up in ${txnDate}'s reports (not today's) once that date arrives.`
+                    : `Logged as ${txnDate} instead of today — it'll show up in that day's reports, and be marked as manually logged on the receipt.`}
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Names — required for Open Play / Court Rental, one per unit of quantity */}
+          {nameItems.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Names</p>
+              {nameItems.map(item => (
+                <div key={item.product_id} className="mb-2 last:mb-0">
+                  <p className="text-xs text-gray-500 mb-1">{item.item_name}{item.quantity > 1 && ` ×${item.quantity}`}</p>
+                  <div className="space-y-1.5">
+                    {namesFor(item.product_id, item.quantity).map((n, i) => (
+                      <input
+                        key={i}
+                        type="text"
+                        value={n}
+                        onChange={e => setName(item.product_id, i, item.quantity, e.target.value)}
+                        placeholder={item.quantity > 1 ? `Name ${i + 1}` : 'Name'}
+                        className="w-full px-3 py-1.5 rounded-lg border border-border text-sm bg-white outline-none"
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -255,10 +316,10 @@ export function CheckoutScreen() {
 
           <button
             onClick={handleConfirm}
-            disabled={processing || (!isUnpaid && method === 'cash' && tendered < totalDue) || (isBackdating && !txnDate)}
+            disabled={processing || (!isUnpaid && method === 'cash' && tendered < totalDue) || (isCustomDating && (!txnDate || !txnTime)) || !namesComplete}
             className={`w-full py-3 rounded-xl text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-default active:scale-98 transition-all ${isUnpaid ? 'bg-orange-500 hover:bg-orange-600' : 'bg-dg hover:bg-dg-light'}`}
           >
-            {processing ? 'Processing…' : isBackdating ? `Log Sale for ${txnDate}` : isUnpaid ? 'Confirm Sale (Unpaid)' : 'Confirm & Print Receipt'}
+            {processing ? 'Processing…' : isCustomDating ? (willBeAdvance ? `Log Advance Payment for ${txnDate}` : `Log Sale for ${txnDate}`) : isUnpaid ? 'Confirm Sale (Unpaid)' : 'Confirm & Print Receipt'}
           </button>
         </div>
       </div>
