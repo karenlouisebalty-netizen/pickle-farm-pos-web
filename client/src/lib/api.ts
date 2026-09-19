@@ -52,6 +52,28 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
   return data as T
 }
 
+// Single attempt at checking the current session directly (bypasses `request()`'s
+// unconditional 401→redirect, since a session-restore check on app load needs to distinguish
+// "definitely not logged in" from "couldn't tell, try again" — see `getSession` below).
+async function checkSessionOnce(): Promise<{ definitive: boolean; session: Session | null }> {
+  const token = getToken()
+  if (!token) return { definitive: true, session: null }
+  try {
+    const res = await fetch('/api/auth/session', { headers: { Authorization: `Bearer ${token}` } })
+    if (res.status === 401) {
+      // Server reachable and it says the token's genuinely invalid/expired — trust it now,
+      // no point retrying.
+      setToken(null)
+      return { definitive: true, session: null }
+    }
+    if (!res.ok) return { definitive: false, session: null }
+    return { definitive: true, session: await res.json() }
+  } catch {
+    // fetch() itself threw — offline, or the network isn't back yet. Not a real answer.
+    return { definitive: false, session: null }
+  }
+}
+
 function qs(params: Record<string, string | undefined>): string {
   const parts = Object.entries(params)
     .filter(([, v]) => v !== undefined)
@@ -128,9 +150,28 @@ export const api = {
     try { await request('POST', '/auth/logout') } catch { /* ignore */ }
     setToken(null)
   },
-  getSession: (): Promise<Session | null> => {
-    if (!getToken()) return Promise.resolve(null)
-    return request<Session>('GET', '/auth/session').catch(() => null)
+  // Restoring a session on app load — deliberately more forgiving than a normal in-app API
+  // call. A tablet that was just restarted can take a while to reconnect to Wi-Fi, and the
+  // very first thing this app does is check the session; if that check fails because the
+  // network isn't back yet (not because the login is actually invalid), the old behavior was
+  // to treat it exactly like a real logout and bounce to the login screen — silently dropping
+  // a staff member's still-valid session just because Wi-Fi hadn't caught up yet. Now: a
+  // genuine 401 (server reachable, token really is invalid/expired) is trusted immediately,
+  // but anything else (offline, DNS still resolving, server still booting) retries with
+  // backoff for up to ~15s before giving up, which comfortably covers a normal Wi-Fi
+  // reconnect after a restart. The stored token is only ever cleared on that genuine 401.
+  getSession: async (): Promise<Session | null> => {
+    if (!getToken()) return null
+    const delays = [0, 1000, 2000, 3000, 4000, 5000]
+    for (const delay of delays) {
+      if (delay) await new Promise(r => setTimeout(r, delay))
+      const result = await checkSessionOnce()
+      if (result.definitive) return result.session
+    }
+    // Still unreachable after all retries — give up for this load rather than hang forever.
+    // The token itself is untouched, so the next successful load (once the network's back)
+    // restores the session normally instead of forcing a fresh login.
+    return null
   },
   listUsers: (branchId: string) => request<User[]>('GET', `/auth/users${qs({ branchId })}`),
 

@@ -22,7 +22,7 @@ function getEndTime(start,dur){const [h,m]=start.split(':').map(Number);const t=
 export function POSScreen() {
   const navigate = useNavigate()
   const session = useSessionStore(s => s.session)
-  const { items, addItem, removeItem, updateQty, clearCart, discount, setDiscount, setMember, memberName, subtotal, discountAmount, total, itemCount } = useCartStore()
+  const { items, addItem, removeItem, updateQty, clearCart, discount, setMember, memberName, pwdSeniorActive, setPwdSeniorDiscount, subtotal, discountAmount, total, itemCount } = useCartStore()
   const [products, setProducts] = useState([])
   const [activeCat, setActiveCat] = useState('all')
   const [search, setSearch] = useState('')
@@ -30,6 +30,7 @@ export function POSScreen() {
   const [courtBooking, setCourtBooking] = useState({court:'Court 1',date:new Date().toISOString().slice(0,10),startTime:'08:00',duration:'1'})
   const [courtError, setCourtError] = useState('')
   const [memberModal, setMemberModal] = useState(false)
+  const [pwdModal, setPwdModal] = useState(false)
   const [memberQuery, setMemberQuery] = useState('')
   const [memberResults, setMemberResults] = useState([])
   const [checkingCourt, setCheckingCourt] = useState(false)
@@ -169,8 +170,8 @@ export function POSScreen() {
             <button onClick={() => setMemberModal(true)} className="flex-1 py-2 rounded-lg bg-surface border border-border text-xs font-medium hover:bg-cream text-gray-500">
               <i className="ti ti-id-badge mr-1" />{memberName ? memberName : 'Member'}
             </button>
-            <button onClick={() => {}} className="flex-1 py-2 rounded-lg bg-surface border border-border text-xs font-medium hover:bg-cream text-gray-500">
-              Discount
+            <button onClick={() => setPwdModal(true)} className={"flex-1 py-2 rounded-lg border text-xs font-medium " + (pwdSeniorActive ? 'bg-olive/10 border-olive text-dg' : 'bg-surface border-border hover:bg-cream text-gray-500')}>
+              <i className="ti ti-wheelchair mr-1" />{pwdSeniorActive ? 'PWD/Senior ✓' : 'PWD/Senior'}
             </button>
             <button
               disabled={items.length === 0}
@@ -195,6 +196,9 @@ export function POSScreen() {
                 <span className='text-sm text-green-700 font-medium'>{memberName} — ₱100 off court rentals</span>
                 <button onClick={() => { setMember('', 0); setMemberModal(false) }} className='ml-auto text-gray-400 text-xs'>Remove</button>
               </div>
+            )}
+            {pwdSeniorActive && !memberName && (
+              <p className='text-xs text-orange-600 mb-3'>Picking a member here will replace the active PWD/Senior discount.</p>
             )}
             <div className='flex gap-2 mb-3'>
               <input value={memberQuery} onChange={e => setMemberQuery(e.target.value)}
@@ -227,6 +231,36 @@ export function POSScreen() {
             )}
             <button onClick={() => { setMemberModal(false); setMemberQuery(''); setMemberResults([]) }}
               className='w-full py-2 rounded-lg border border-border text-sm text-gray-600 hover:bg-surface'>Close</button>
+          </div>
+        </div>
+      )}
+      {pwdModal&&(
+        <div className='fixed inset-0 bg-black/50 flex items-center justify-center z-50'>
+          <div className='bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6'>
+            <div className='flex items-center justify-between mb-4'>
+              <h2 className='text-base font-medium text-dg'>PWD / Senior Citizen Discount</h2>
+              <button onClick={() => setPwdModal(false)} className='text-gray-400'><i className='ti ti-x' /></button>
+            </div>
+            <p className='text-xs text-gray-500 mb-4'>
+              20% off — applies only to Court Rental and Rentals (paddles, etc.) in this order. Food &amp; drinks, merchandise, coaching, and Open Play are not discounted.
+            </p>
+            {pwdSeniorActive ? (
+              <div className='flex items-center gap-2 p-3 bg-green-50 rounded-lg mb-3'>
+                <i className='ti ti-circle-check text-green-600' />
+                <span className='text-sm text-green-700 font-medium'>Applied — {formatPeso(discountAmount())} off</span>
+                <button onClick={() => setPwdSeniorDiscount(false)} className='ml-auto text-gray-400 text-xs'>Remove</button>
+              </div>
+            ) : (
+              <>
+                {memberName && (
+                  <p className='text-xs text-orange-600 mb-3'>This will replace the active Member discount ({memberName}).</p>
+                )}
+                <button onClick={() => setPwdSeniorDiscount(true)} className='w-full py-2.5 rounded-lg bg-dg text-white text-sm font-medium hover:bg-dg-light mb-3'>
+                  Apply 20% Discount
+                </button>
+              </>
+            )}
+            <button onClick={() => setPwdModal(false)} className='w-full py-2 rounded-lg border border-border text-sm text-gray-600 hover:bg-surface'>Close</button>
           </div>
         </div>
       )}
