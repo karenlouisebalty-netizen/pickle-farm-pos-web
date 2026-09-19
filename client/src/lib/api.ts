@@ -10,7 +10,7 @@ import type {
   Reservation, OpenPlayRegistration, Member, MembershipType,
   Expense, ExpenseSummary, DailySummary, Session, User,
   InventoryCount, WasteEntry, WasteReason, ReconciliationRow,
-  AttendanceLog, AttendanceSummaryRow,
+  AttendanceLog, AttendanceSummaryRow, ClockType,
 } from '../shared/types'
 
 const TOKEN_KEY = 'pf_pos_token'
@@ -177,7 +177,7 @@ export const api = {
 
   // ── Attendance / Time Clock (staff sign in/out with a photo as proof) ──
   getTodayAttendance: (branchId: string) => request<AttendanceLog[]>('GET', `/attendance/today${qs({ branchId })}`),
-  clockAttendance: (branchId: string, userId: string, clockType: 'in' | 'out', photo?: string) =>
+  clockAttendance: (branchId: string, userId: string, clockType: ClockType, photo?: string) =>
     request<AttendanceLog>('POST', '/attendance/clock', { branchId, userId, clockType, photo }),
   // ownerToken is only needed when called pre-auth (the Login screen's Time Clock tab, after a
   // PIN check there). From inside the app the owner is already signed in, so it's omitted and

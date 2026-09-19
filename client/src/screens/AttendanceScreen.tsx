@@ -1,10 +1,20 @@
 import { useState, useEffect } from 'react'
 import { useSessionStore } from '../stores/sessionStore'
 import { formatPeso } from '../shared/utils'
-import type { AttendanceLog, AttendanceSummaryRow, User } from '../shared/types'
+import type { AttendanceLog, AttendanceSummaryRow, User, ClockType } from '../shared/types'
 
 function fmtDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+const CLOCK_TYPE_LABEL: Record<ClockType, string> = {
+  in: 'In', out: 'Out', break_start: 'Break Start', break_end: 'Break End',
+}
+const CLOCK_TYPE_BADGE_CLASS: Record<ClockType, string> = {
+  in: 'bg-green-100 text-green-700',
+  out: 'bg-gray-100 text-gray-500',
+  break_start: 'bg-orange-100 text-orange-700',
+  break_end: 'bg-olive/10 text-dg',
 }
 
 function PhotoPreviewModal({ log, onClose }: { log: AttendanceLog; onClose: () => void }) {
@@ -21,7 +31,7 @@ function PhotoPreviewModal({ log, onClose }: { log: AttendanceLog; onClose: () =
         <div className="p-4">
           <div className="font-medium text-dg">{log.user_name}</div>
           <div className="text-sm text-gray-500">
-            Clocked <span className="capitalize">{log.clock_type}</span> &mdash; {fmtDateTime(log.captured_at)}
+            {CLOCK_TYPE_LABEL[log.clock_type]} &mdash; {fmtDateTime(log.captured_at)}
           </div>
           <button
             onClick={onClose}
@@ -321,6 +331,7 @@ export function AttendanceScreen() {
                     <th className="py-3 px-4 font-medium">Staff</th>
                     <th className="py-3 px-4 font-medium text-right">Days Present</th>
                     <th className="py-3 px-4 font-medium text-right">Total Hours</th>
+                    <th className="py-3 px-4 font-medium text-right">Break Hours</th>
                     <th className="py-3 px-4 font-medium text-right">Daily Rate</th>
                     <th className="py-3 px-4 font-medium text-right">Salary</th>
                   </tr>
@@ -331,6 +342,7 @@ export function AttendanceScreen() {
                       <td className="py-3 px-4 font-medium text-dg">{r.full_name}</td>
                       <td className="py-3 px-4 text-right text-dg">{r.days_present}</td>
                       <td className="py-3 px-4 text-right text-dg">{r.total_hours.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right text-gray-500">{r.total_break_hours.toFixed(2)}</td>
                       <td className="py-3 px-4 text-right text-gray-500">{formatPeso(r.daily_rate)}/day</td>
                       <td className="py-3 px-4 text-right font-semibold text-dg">{formatPeso(r.total_salary)}</td>
                     </tr>
@@ -338,7 +350,7 @@ export function AttendanceScreen() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-surface">
-                    <td className="py-3 px-4 font-medium text-dg" colSpan={4}>Total payroll this month</td>
+                    <td className="py-3 px-4 font-medium text-dg" colSpan={5}>Total payroll this month</td>
                     <td className="py-3 px-4 text-right font-semibold text-dg">
                       {formatPeso(summary.reduce((sum, r) => sum + r.total_salary, 0))}
                     </td>
@@ -380,8 +392,8 @@ export function AttendanceScreen() {
                     <div className="p-2">
                       <div className="text-xs font-medium text-dg truncate">{log.user_name}</div>
                       <div className="flex items-center justify-between mt-1">
-                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${log.clock_type === 'in' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                          {log.clock_type === 'in' ? 'In' : 'Out'}
+                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${CLOCK_TYPE_BADGE_CLASS[log.clock_type]}`}>
+                          {CLOCK_TYPE_LABEL[log.clock_type]}
                         </span>
                         <span className="text-[10px] text-gray-400">{fmtDateTime(log.captured_at)}</span>
                       </div>

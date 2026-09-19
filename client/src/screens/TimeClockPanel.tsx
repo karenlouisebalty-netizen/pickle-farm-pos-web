@@ -1,10 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
-import type { User, AttendanceLog, AttendanceSummaryRow } from '../shared/types'
+import type { User, AttendanceLog, AttendanceSummaryRow, ClockType } from '../shared/types'
 
 const BRANCH_ID = 'branch-pf-001'
 
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })
+}
+
+const CLOCK_LABELS: Record<ClockType, string> = {
+  in: 'Clock In',
+  out: 'Clock Out',
+  break_start: 'Start Break',
+  break_end: 'End Break',
 }
 
 // ── Camera capture ──────────────────────────────────────────
@@ -49,9 +56,9 @@ function useCamera() {
   return { videoRef, ready, error, start, stop, capture }
 }
 
-// ── Clock in/out modal (photo proof) ────────────────────────
+// ── Clock in/out/break modal (photo proof) ───────────────────
 function ClockModal({ user, clockType, onClose, onDone }: {
-  user: User; clockType: 'in' | 'out'; onClose: () => void; onDone: (photo: string) => Promise<void>
+  user: User; clockType: ClockType; onClose: () => void; onDone: (photo: string) => Promise<void>
 }) {
   const cam = useCamera()
   const [captured, setCaptured] = useState<string | null>(null)
@@ -82,7 +89,7 @@ function ClockModal({ user, clockType, onClose, onDone }: {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm mx-4 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-medium text-dg">
-            {clockType === 'in' ? 'Clock In' : 'Clock Out'} &mdash; {user.full_name}
+            {CLOCK_LABELS[clockType]} &mdash; {user.full_name}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><i className="ti ti-x" /></button>
         </div>
@@ -115,7 +122,7 @@ function ClockModal({ user, clockType, onClose, onDone }: {
               disabled={submitting}
               className="flex-1 h-12 rounded-lg bg-olive text-white font-semibold hover:opacity-90 transition-colors disabled:opacity-40"
             >
-              {submitting ? 'Saving...' : `Confirm ${clockType === 'in' ? 'Clock In' : 'Clock Out'}`}
+              {submitting ? 'Saving...' : `Confirm ${CLOCK_LABELS[clockType]}`}
             </button>
           </div>
         )}
@@ -325,6 +332,7 @@ function MonthlySummaryModal({ ownerToken, onClose }: { ownerToken: string; onCl
                 <th className="py-2">Staff</th>
                 <th className="py-2 text-right">Days Present</th>
                 <th className="py-2 text-right">Total Hours</th>
+                <th className="py-2 text-right">Break Hours</th>
               </tr>
             </thead>
             <tbody>
@@ -333,6 +341,7 @@ function MonthlySummaryModal({ ownerToken, onClose }: { ownerToken: string; onCl
                   <td className="py-2 text-dg">{r.full_name}</td>
                   <td className="py-2 text-right">{r.days_present}</td>
                   <td className="py-2 text-right font-medium text-dg">{r.total_hours.toFixed(2)}</td>
+                  <td className="py-2 text-right text-gray-500">{r.total_break_hours.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
@@ -346,7 +355,7 @@ function MonthlySummaryModal({ ownerToken, onClose }: { ownerToken: string; onCl
 // ── Main panel ────────────────────────────────────────────────
 export function TimeClockPanel({ users, onStaffChanged }: { users: User[]; onStaffChanged: () => void }) {
   const [today, setToday] = useState<AttendanceLog[]>([])
-  const [clockTarget, setClockTarget] = useState<{ user: User; type: 'in' | 'out' } | null>(null)
+  const [clockTarget, setClockTarget] = useState<{ user: User; type: ClockType } | null>(null)
   const [notice, setNotice] = useState('')
 
   const [pinGate, setPinGate] = useState<null | 'add' | 'remove' | 'summary'>(null)
@@ -360,9 +369,13 @@ export function TimeClockPanel({ users, onStaffChanged }: { users: User[]; onSta
   }
   useEffect(() => { refreshToday() }, [])
 
-  function statusFor(userId: string): 'in' | 'out' {
+  // 'in'/'break_end' both mean "currently working"; 'break_start' means "on break right
+  // now"; no entries today, or the last one was 'out', both mean "not clocked in."
+  function statusFor(userId: string): 'in' | 'out' | 'on_break' {
     const last = today.find(a => a.user_id === userId)
-    return last?.clock_type === 'in' ? 'in' : 'out'
+    if (!last || last.clock_type === 'out') return 'out'
+    if (last.clock_type === 'break_start') return 'on_break'
+    return 'in'
   }
 
   async function handleDone(photo: string) {
@@ -371,7 +384,8 @@ export function TimeClockPanel({ users, onStaffChanged }: { users: User[]; onSta
     await window.electronAPI.clockAttendance(BRANCH_ID, user.id, type, photo)
     setClockTarget(null)
     await refreshToday()
-    setNotice(`${user.full_name} clocked ${type} at ${fmtTime(new Date().toISOString())}`)
+    const verb = type === 'in' ? 'clocked in' : type === 'out' ? 'clocked out' : type === 'break_start' ? 'started their break' : 'ended their break'
+    setNotice(`${user.full_name} ${verb} at ${fmtTime(new Date().toISOString())}`)
     setTimeout(() => setNotice(''), 4000)
   }
 
@@ -389,17 +403,59 @@ export function TimeClockPanel({ users, onStaffChanged }: { users: User[]; onSta
         {staff.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No staff yet — add one below.</p>}
         {staff.map(u => {
           const status = statusFor(u.id)
+          const badge =
+            status === 'in' ? { text: 'Clocked In', cls: 'bg-green-100 text-green-700' } :
+            status === 'on_break' ? { text: 'On Break', cls: 'bg-orange-100 text-orange-700' } :
+            { text: 'Clocked Out', cls: 'bg-gray-100 text-gray-500' }
           return (
-            <button
-              key={u.id}
-              onClick={() => setClockTarget({ user: u, type: status === 'in' ? 'out' : 'in' })}
-              className="w-full p-3 rounded-lg border border-border text-left hover:border-olive hover:bg-surface transition-colors flex items-center justify-between"
-            >
-              <span className="font-medium text-dg">{u.full_name}</span>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${status === 'in' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                {status === 'in' ? 'Clocked In — tap to clock out' : 'Tap to clock in'}
-              </span>
-            </button>
+            <div key={u.id} className="w-full p-3 rounded-lg border border-border flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-medium text-dg truncate">{u.full_name}</span>
+                <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${badge.cls}`}>{badge.text}</span>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {status === 'out' && (
+                  <button
+                    onClick={() => setClockTarget({ user: u, type: 'in' })}
+                    className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-dg text-white hover:bg-dg-light transition-colors"
+                  >
+                    Clock In
+                  </button>
+                )}
+                {status === 'in' && (
+                  <>
+                    <button
+                      onClick={() => setClockTarget({ user: u, type: 'break_start' })}
+                      className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-border text-dg hover:bg-surface transition-colors"
+                    >
+                      Take Break
+                    </button>
+                    <button
+                      onClick={() => setClockTarget({ user: u, type: 'out' })}
+                      className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-dg text-white hover:bg-dg-light transition-colors"
+                    >
+                      Clock Out
+                    </button>
+                  </>
+                )}
+                {status === 'on_break' && (
+                  <>
+                    <button
+                      onClick={() => setClockTarget({ user: u, type: 'out' })}
+                      className="text-xs font-medium px-2.5 py-1.5 rounded-lg border border-border text-gray-500 hover:bg-surface transition-colors"
+                    >
+                      Clock Out
+                    </button>
+                    <button
+                      onClick={() => setClockTarget({ user: u, type: 'break_end' })}
+                      className="text-xs font-medium px-2.5 py-1.5 rounded-lg bg-olive text-white hover:opacity-90 transition-colors"
+                    >
+                      End Break
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           )
         })}
       </div>

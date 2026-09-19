@@ -296,12 +296,14 @@ export interface ReconciliationRow {
   status: 'pending' | 'ok' | 'variance'
 }
 
+export type ClockType = 'in' | 'out' | 'break_start' | 'break_end'
+
 export interface AttendanceLog {
   id: string
   branch_id: string
   user_id: string
   user_name?: string
-  clock_type: 'in' | 'out'
+  clock_type: ClockType
   photo?: string | null
   captured_at: string
 }
@@ -313,8 +315,12 @@ export interface AttendanceSummaryRow {
   days_present: number
   paid_days: number
   total_hours: number
+  /** Total break time this month, in hours — already subtracted out of `total_hours` and
+   *  each day's `hours` below. Purely informational: pay is a flat daily rate either way,
+   *  so breaks never change what's owed (see `paid_days`/`total_salary`). */
+  total_break_hours: number
   total_salary: number
-  days: Array<{ date: string; hours: number; paid: boolean; amount: number }>
+  days: Array<{ date: string; hours: number; break_hours: number; paid: boolean; amount: number }>
 }
 
 export interface DailySummary {
