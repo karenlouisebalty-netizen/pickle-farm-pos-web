@@ -37,8 +37,21 @@ function getSuggestions(waiting,stats){
   const scored=waiting.map(p=>{
     const mismatch=(anchorStatus&&mem.lastResult[p.id]&&mem.lastResult[p.id]!==anchorStatus)?1:0
     return{p,score:suggestionPriority(p,stats,now)-mismatch*240000}
-  })
-  return scored.sort((a,b)=>b.score-a.score).slice(0,4).map(s=>s.p)
+  }).sort((a,b)=>b.score-a.score)
+  // Same batch-compatibility rule as each court's own "Next up" box: never let this general
+  // recommendation put a Beginner and an Advanced player in the same top-4 batch, so it can't imply
+  // a pairing that a court's own suggestion box would refuse to offer. Skip (don't stop on) a
+  // conflicting candidate so a later, compatible one still gets a chance to fill the spot.
+  const picks=[]
+  const simSkills=new Set()
+  for(const s of scored){
+    const wouldHave=new Set([...simSkills,s.p.skill_level])
+    if(wouldHave.has('beginner')&&wouldHave.has('advanced'))continue
+    picks.push(s.p)
+    simSkills.add(s.p.skill_level)
+    if(picks.length>=4)break
+  }
+  return picks
 }
 
 // Beginners and Advanced players are never put in the same match — it's not a good game for
