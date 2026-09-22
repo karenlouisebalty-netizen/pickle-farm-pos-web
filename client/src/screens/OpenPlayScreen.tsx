@@ -47,6 +47,9 @@ export function OpenPlayScreen(){
   const [name,setName]=useState('')
   const [skill,setSkill]=useState('beginner')
   const [removing,setRemoving]=useState(null)
+  // Players a staffer has set aside — excluded from Waiting/suggestions until resumed.
+  // Purely local (like op_players/op_courts) since there's no server-side concept of this.
+  const [pausedIds,setPausedIds]=useState(()=>{try{const s=localStorage.getItem('op_paused');return s?JSON.parse(s):[]}catch{return[]}})
   const [confirmReset,setConfirmReset]=useState(false)
   const [confirmNew,setConfirmNew]=useState(false)
   const [sessionNum,setSessionNum]=useState(mem.currentSession||1)
@@ -80,7 +83,11 @@ export function OpenPlayScreen(){
   },[session])
 
   const onCourtIds=new Set([...courts['Court 1'],...courts['Court 2']].map(p=>p.id))
-  const waiting=players.filter(p=>!onCourtIds.has(p.id)&&!mem.removed[p.id])
+  const pausedSet=new Set(pausedIds)
+  // Paused players are set aside — excluded from Waiting, never suggested/called for a
+  // court — until a staffer taps Resume on them.
+  const waiting=players.filter(p=>!onCourtIds.has(p.id)&&!mem.removed[p.id]&&!pausedSet.has(p.id))
+  const pausedPlayers=players.filter(p=>!onCourtIds.has(p.id)&&!mem.removed[p.id]&&pausedSet.has(p.id))
   const onCourt=courts['Court 1'].length+courts['Court 2'].length
   const suggestions=getSuggestions(waiting,stats)
   const sortedWaiting=[...waiting].sort((a,b)=>{
@@ -130,15 +137,24 @@ export function OpenPlayScreen(){
     mem.removed[p.id]=true
     setPlayers(prev=>{const n=prev.filter(x=>x.id!==p.id);localStorage.setItem('op_players',JSON.stringify(n));return n})
     setCourts(c=>{const n={'Court 1':c['Court 1'].filter(x=>x.id!==p.id),'Court 2':c['Court 2'].filter(x=>x.id!==p.id)};localStorage.setItem('op_courts',JSON.stringify(n));return n})
+    setPausedIds(ids=>{const n=ids.filter(id=>id!==p.id);localStorage.setItem('op_paused',JSON.stringify(n));return n})
     setRemoving(null)
+  }
+
+  function pausePlayer(p){
+    setPausedIds(ids=>{const n=ids.includes(p.id)?ids:[...ids,p.id];localStorage.setItem('op_paused',JSON.stringify(n));return n})
+  }
+
+  function resumePlayer(p){
+    setPausedIds(ids=>{const n=ids.filter(id=>id!==p.id);localStorage.setItem('op_paused',JSON.stringify(n));return n})
   }
 
   function endSession(startNew){
     mem.sessions.push({num:sessionNum,start:sessionStart,end:new Date().toISOString(),playerCount:players.length,players:players.map(p=>p.player_name),games:mem.history.filter(g=>g.sessionNum===sessionNum).length})
     mem.removed={};mem.lastFinished={};mem.recentOpponents={};saveMem();saveMem()
     if(startNew){const next=sessionNum+1;mem.currentSession=next;setSessionNum(next);setSessionStart(new Date().toISOString())}
-    setPlayers([]);setCourts({'Court 1':[],'Court 2':[]})
-    localStorage.setItem('op_players','[]');localStorage.setItem('op_courts',JSON.stringify({'Court 1':[],'Court 2':[]}))
+    setPlayers([]);setCourts({'Court 1':[],'Court 2':[]});setPausedIds([])
+    localStorage.setItem('op_players','[]');localStorage.setItem('op_courts',JSON.stringify({'Court 1':[],'Court 2':[]}));localStorage.setItem('op_paused','[]')
     setRec(null);setConfirmReset(false);setConfirmNew(false);setShowSkillPicker(true)
   }
 
@@ -206,6 +222,7 @@ export function OpenPlayScreen(){
             <div><div className='text-base font-medium text-dg'>{players.length}</div><div className='text-xs text-gray-400'>Players</div></div>
             <div><div className='text-base font-medium text-olive'>{onCourt}</div><div className='text-xs text-gray-400'>On court</div></div>
             <div><div className='text-base font-medium text-maroon'>{waiting.length}</div><div className='text-xs text-gray-400'>Waiting</div></div>
+            {pausedPlayers.length>0&&<div><div className='text-base font-medium text-gray-400'>{pausedPlayers.length}</div><div className='text-xs text-gray-400'>Paused</div></div>}
           </div>
           <button onClick={()=>setConfirmNew(true)} className='px-3 py-1.5 rounded-lg bg-olive text-white text-xs font-medium flex items-center gap-1'><i className='ti ti-plus'/>New Session</button>
           <button onClick={()=>setConfirmReset(true)} className='px-3 py-1.5 rounded-lg border border-border bg-white text-xs text-gray-600 flex items-center gap-1'><i className='ti ti-refresh'/>Reset</button>
@@ -265,11 +282,29 @@ export function OpenPlayScreen(){
                       <button onClick={()=>assign(p,'Court 2')} disabled={courts['Court 2'].length>=4} title='Assign to Court 2'
                         className='text-xs px-1.5 py-1 rounded-md bg-dg/10 text-dg font-medium hover:bg-dg/20 disabled:opacity-30 disabled:cursor-not-allowed'>C2</button>
                     </div>
+                    <button onClick={()=>pausePlayer(p)} title='Pause — skip calling them for a while' className='text-gray-300 hover:text-orange-400 text-xs p-0.5'><i className='ti ti-player-pause'/></button>
                     <button onClick={()=>setRemoving(p)} className='text-gray-300 hover:text-red-400 text-xs p-0.5'><i className='ti ti-x'/></button>
                   </div>
                 )
               })}
             </div>
+            {pausedPlayers.length>0&&(
+              <div className='bg-white rounded-xl border border-border p-4'>
+                <div className='text-sm font-medium text-dg mb-1 flex items-center justify-between'>
+                  Paused <span className='text-xs bg-gray-400 text-white px-2 py-0.5 rounded-full'>{pausedPlayers.length}</span>
+                </div>
+                <div className='text-xs text-gray-400 mb-2'>Set aside — won't be suggested or called for a court until resumed</div>
+                {pausedPlayers.map(p=>(
+                  <div key={p.id} className='flex items-center gap-2 py-1.5 border-b border-border last:border-0 px-1'>
+                    <div className='flex-1 min-w-0'>
+                      <span className='text-xs font-medium text-dg truncate'>{p.player_name}</span>
+                    </div>
+                    <span className={'text-xs px-1 py-0.5 rounded border mr-1 '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                    <button onClick={()=>resumePlayer(p)} title='Resume — make them callable again' className='text-xs px-2 py-1 rounded-md bg-olive text-white font-medium flex items-center gap-1'><i className='ti ti-player-play'/>Resume</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className='lg:col-span-2 space-y-4'>
             <div className='bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-700'>
