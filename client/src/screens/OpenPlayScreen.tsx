@@ -541,13 +541,29 @@ export function OpenPlayScreen(){
                         </div>
                         {(()=>{
                           // Fill the open slots from the ranked, skill-compatible candidate list —
-                          // a fixed pair counts as 2 slots, so stop once the remaining room runs out.
+                          // a fixed pair counts as 2 slots, so stop once the remaining room runs
+                          // out. Each candidate in `sug` was only checked against the court's
+                          // CURRENT occupants (courtSuggestions doesn't know about the other
+                          // candidates being offered alongside it), so on an empty or
+                          // lightly-filled court a Beginner and an Advanced could both
+                          // individually qualify and get listed side by side here even though
+                          // assigning both would break the Beginner/Advanced rule the moment the
+                          // second one actually joined. Track a running, simulated skill set as
+                          // picks are chosen so the batch shown together is one that could really
+                          // all be assigned to this court — skipping (not stopping on) a
+                          // candidate that would conflict, so a later compatible candidate still
+                          // gets a chance to fill the slot.
                           let room=4-cp.length
                           const picks=[]
+                          const simSkills=new Set(cp.map(x=>x.skill_level))
                           for(const s of sug){
                             if(s.needed>room)continue
+                            const candSkills=s.partner?[s.p.skill_level,s.partner.skill_level]:[s.p.skill_level]
+                            const wouldHave=new Set([...simSkills,...candSkills])
+                            if(wouldHave.has('beginner')&&wouldHave.has('advanced'))continue
                             picks.push(s)
                             room-=s.needed
+                            candSkills.forEach(sk=>simSkills.add(sk))
                             if(room<=0)break
                           }
                           return picks.map(({p,partner},i)=>{
