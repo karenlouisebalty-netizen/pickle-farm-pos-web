@@ -142,7 +142,12 @@ export function OpenPlayScreen(){
     setRec(null);setConfirmReset(false);setConfirmNew(false);setShowSkillPicker(true)
   }
 
-  function recordResult(t1ids,t2ids){
+  // Recording a result means the game on that court is over, so every player who was on
+  // it — not just the two teams that were tracked for the score — is automatically
+  // checked out (same as tapping "Done" on each of them individually) once the score is
+  // saved. Saves Louise from having to record the result and then separately tap Done on
+  // every player on that court.
+  async function recordResult(t1ids,t2ids,cp){
     if(!winner)return
     const ns={...stats}
     ;[...t1ids,...t2ids].forEach(id=>{if(!ns[id])ns[id]={wins:0,losses:0,draws:0,name:players.find(p=>p.id===id)?.player_name||'?'}})
@@ -152,6 +157,7 @@ export function OpenPlayScreen(){
     else{const w=winner==='t1'?t1ids:t2ids;const l=winner==='t1'?t2ids:t1ids;w.forEach(id=>{ns[id].wins=(ns[id].wins||0)+1});l.forEach(id=>{ns[id].losses=(ns[id].losses||0)+1})}
     mem.history.push({id:Date.now(),date:new Date().toISOString(),sessionNum,t1:t1ids.map(id=>({id,name:ns[id]?.name})),t2:t2ids.map(id=>({id,name:ns[id]?.name})),winner})
     mem.stats=ns;setStats(ns);setRec(null);setWinner(null);saveMem();saveMem()
+    for(const p of cp||[]){await donePlayer(p)}
   }
 
   function onDragStart(p){setDragPlayer(p)}
@@ -545,7 +551,7 @@ export function OpenPlayScreen(){
             </div>
             <div className='flex gap-2'>
               <button onClick={()=>{setRec(null);setWinner(null)}} className='flex-1 py-2 rounded-lg bg-surface border border-border text-sm text-gray-600'>Cancel</button>
-              <button onClick={()=>recordResult((rec.t1&&rec.t1.length>0?rec.t1:rec.cp.slice(0,2)).map(p=>p.id),(rec.t2&&rec.t2.length>0?rec.t2:rec.cp.slice(2,4)).map(p=>p.id))} disabled={!winner} className='flex-1 py-2 rounded-lg bg-dg text-white text-sm font-medium disabled:opacity-40'>Record</button>
+              <button onClick={()=>recordResult((rec.t1&&rec.t1.length>0?rec.t1:rec.cp.slice(0,2)).map(p=>p.id),(rec.t2&&rec.t2.length>0?rec.t2:rec.cp.slice(2,4)).map(p=>p.id),rec.cp)} disabled={!winner} className='flex-1 py-2 rounded-lg bg-dg text-white text-sm font-medium disabled:opacity-40'>Record</button>
             </div>
           </div>
         </div>

@@ -6,9 +6,9 @@ interface CartStore {
   items: CartItem[]
   discount: CartDiscount
   memberName: string | null
-  // PWD / Senior Citizen discount — 20% off, but ONLY on Court Rental and Rentals (paddles,
-  // etc.). Mutually exclusive with the Member discount: this app only carries one discount
-  // reason per sale, so turning one on clears the other.
+  // PWD / Senior Citizen discount — 20% off, but ONLY on Open Play, Court Rental, and Rentals
+  // (paddles, etc.). Mutually exclusive with the Member discount: this app only carries one
+  // discount reason per sale, so turning one on clears the other.
   pwdSeniorActive: boolean
 
   addItem:      (product: Product) => void
@@ -125,9 +125,9 @@ export const useCartStore = create<CartStore>((set, get) => ({
     const state = get()
     const d = state.discount
     if (state.pwdSeniorActive) {
-      // 20% off, but only on Court Rental and Rentals (paddles, etc.) line items — never
-      // food & drinks, merchandise, coaching, or Open Play.
-      const eligible = state.items.filter(i => i.category === 'court_rental' || i.category === 'rental')
+      // 20% off, but only on Open Play, Court Rental, and Rentals (paddles, etc.) line items
+      // — never food & drinks, merchandise, or coaching.
+      const eligible = state.items.filter(i => i.category === 'open_play' || i.category === 'court_rental' || i.category === 'rental')
       const eligibleSubtotal = eligible.reduce((sum, i) => sum + i.line_total, 0)
       return Math.round(eligibleSubtotal * 0.20)
     }

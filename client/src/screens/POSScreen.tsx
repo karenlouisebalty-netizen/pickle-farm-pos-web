@@ -242,7 +242,7 @@ export function POSScreen() {
               <button onClick={() => setPwdModal(false)} className='text-gray-400'><i className='ti ti-x' /></button>
             </div>
             <p className='text-xs text-gray-500 mb-4'>
-              20% off — applies only to Court Rental and Rentals (paddles, etc.) in this order. Food &amp; drinks, merchandise, coaching, and Open Play are not discounted.
+              20% off — applies only to Open Play, Court Rental, and Rentals (paddles, etc.) in this order. Food &amp; drinks, merchandise, and coaching are not discounted.
             </p>
             {pwdSeniorActive ? (
               <div className='flex items-center gap-2 p-3 bg-green-50 rounded-lg mb-3'>
