@@ -5,9 +5,10 @@ const SC={beginner:'bg-green-100 text-green-700 border-green-200',intermediate:'
 const SS={beginner:'BEG',intermediate:'INT',advanced:'ADV'}
 const SKILL_ORDER={beginner:1,intermediate:2,advanced:3}
 
-function loadMem(){try{const s=localStorage.getItem('op_mem');return s?JSON.parse(s):{sessions:[],currentSession:1,stats:{},history:[],removed:{},lastFinished:{},recentOpponents:{}}}catch{return{sessions:[],currentSession:1,stats:{},history:[],removed:{},lastFinished:{},recentOpponents:{}}}}
+function loadMem(){try{const s=localStorage.getItem('op_mem');return s?JSON.parse(s):{sessions:[],currentSession:1,stats:{},history:[],removed:{},lastFinished:{},recentOpponents:{},lastResult:{}}}catch{return{sessions:[],currentSession:1,stats:{},history:[],removed:{},lastFinished:{},recentOpponents:{},lastResult:{}}}}
 function saveMem(){try{localStorage.setItem('op_mem',JSON.stringify(mem))}catch{}}
 const mem=loadMem()
+if(!mem.lastResult)mem.lastResult={} // guard for op_mem saved before this key existed
 
 function ago(iso){const m=Math.floor((Date.now()-new Date(iso).getTime())/60000);return m<1?'just now':m<60?m+'m ago':Math.floor(m/60)+'h '+(m%60?m%60+'m':'')}
 function wr(s){const g=(s.wins||0)+(s.losses||0);return g?Math.round((s.wins||0)/g*100):0}
@@ -159,13 +160,32 @@ export function OpenPlayScreen(){
     return null
   }
 
+  // A court's "winner status" — 'win' if everyone currently on it just won their last game,
+  // 'loss' if everyone just lost, or null if it's empty, mixed, or nobody there has a result
+  // yet. Used by courtSuggestions to nudge winners toward winners and losers toward losers.
+  function courtWinnerStatus(courtPlayers){
+    const known=courtPlayers.map(cpP=>mem.lastResult[cpP.id]).filter(Boolean)
+    if(known.length===0)return null
+    return known.every(r=>r===known[0])?known[0]:null
+  }
+  function candidateWinnerStatus(p,partner){
+    const a=mem.lastResult[p.id]
+    if(!partner)return a||null
+    const b=mem.lastResult[partner.id]
+    return(a&&b&&a===b)?a:null
+  }
+
   // Per-court "next up" candidates: skill-compatible with what's already on THIS court, a fixed
   // pair brought along as one unit, and ranked by the same wait-time/game-count priority as
   // getSuggestions() but with a penalty for players who've recently played the people already on
-  // this court — so the same faces don't keep getting rotated back in against each other.
+  // this court — so the same faces don't keep getting rotated back in against each other — and a
+  // separate penalty for players whose last result doesn't match the court's winner/loser status,
+  // so players who just won tend to get matched with other recent winners (and losers with
+  // losers), keeping games competitive and naturally mixing up who plays whom.
   function courtSuggestions(court){
     const cp=courts[court]
     const now=Date.now()
+    const courtStatus=courtWinnerStatus(cp)
     const seen=new Set()
     const out=[]
     for(const p of waiting){
@@ -188,7 +208,9 @@ export function OpenPlayScreen(){
         const b=partner&&(mem.recentOpponents[partner.id]||[]).includes(cpP.id)?1:0
         return n+a+b
       },0)
-      out.push({p,partner,needed,score:(wait-gamePenalty)-overlap*180000})
+      const candStatus=candidateWinnerStatus(p,partner)
+      const winnerMismatch=(courtStatus&&candStatus&&candStatus!==courtStatus)?1:0
+      out.push({p,partner,needed,score:(wait-gamePenalty)-overlap*180000-winnerMismatch*240000})
     }
     return out.sort((a,b)=>b.score-a.score)
   }
@@ -257,7 +279,7 @@ export function OpenPlayScreen(){
 
   function endSession(startNew){
     mem.sessions.push({num:sessionNum,start:sessionStart,end:new Date().toISOString(),playerCount:players.length,players:players.map(p=>p.player_name),games:mem.history.filter(g=>g.sessionNum===sessionNum).length})
-    mem.removed={};mem.lastFinished={};mem.recentOpponents={};saveMem();saveMem()
+    mem.removed={};mem.lastFinished={};mem.recentOpponents={};mem.lastResult={};saveMem();saveMem()
     if(startNew){const next=sessionNum+1;mem.currentSession=next;setSessionNum(next);setSessionStart(new Date().toISOString())}
     setPlayers([]);setCourts({'Court 1':[],'Court 2':[]});setPausedIds([]);setPairs([])
     localStorage.setItem('op_players','[]');localStorage.setItem('op_courts',JSON.stringify({'Court 1':[],'Court 2':[]}));localStorage.setItem('op_paused','[]');localStorage.setItem('op_pairs','[]')
@@ -275,8 +297,14 @@ export function OpenPlayScreen(){
     ;[...t1ids,...t2ids].forEach(id=>{if(!ns[id])ns[id]={wins:0,losses:0,draws:0,name:players.find(p=>p.id===id)?.player_name||'?'}})
     t1ids.forEach(id=>{mem.recentOpponents[id]=[...(mem.recentOpponents[id]||[]),...t2ids].slice(-12)})
     t2ids.forEach(id=>{mem.recentOpponents[id]=[...(mem.recentOpponents[id]||[]),...t1ids].slice(-12)})
-    if(winner==='draw'){[...t1ids,...t2ids].forEach(id=>{ns[id].draws=(ns[id].draws||0)+1})}
-    else{const w=winner==='t1'?t1ids:t2ids;const l=winner==='t1'?t2ids:t1ids;w.forEach(id=>{ns[id].wins=(ns[id].wins||0)+1});l.forEach(id=>{ns[id].losses=(ns[id].losses||0)+1})}
+    if(winner==='draw'){[...t1ids,...t2ids].forEach(id=>{ns[id].draws=(ns[id].draws||0)+1;delete mem.lastResult[id]})}
+    else{
+      const w=winner==='t1'?t1ids:t2ids;const l=winner==='t1'?t2ids:t1ids
+      // Remember who just won and who just lost — courtSuggestions uses this to favor
+      // matching winners with other recent winners (and losers with losers) next.
+      w.forEach(id=>{ns[id].wins=(ns[id].wins||0)+1;mem.lastResult[id]='win'})
+      l.forEach(id=>{ns[id].losses=(ns[id].losses||0)+1;mem.lastResult[id]='loss'})
+    }
     mem.history.push({id:Date.now(),date:new Date().toISOString(),sessionNum,t1:t1ids.map(id=>({id,name:ns[id]?.name})),t2:t2ids.map(id=>({id,name:ns[id]?.name})),winner})
     mem.stats=ns;setStats(ns);setRec(null);setWinner(null);saveMem();saveMem()
     for(const p of cp||[]){await donePlayer(p)}
@@ -385,6 +413,8 @@ export function OpenPlayScreen(){
                       <div className='text-xs text-gray-400'>{lastDone?'Rested '+ago(new Date(lastDone).toISOString()):'Joined '+ago(p.check_in_at)} · {gs} game{gs!==1?'s':''}</div>
                     </div>
                     <span className={'text-xs px-1 py-0.5 rounded border mr-1 '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                    {mem.lastResult[p.id]==='win'&&<span title='Won their last game' className='text-xs px-1 py-0.5 rounded border mr-1 bg-emerald-50 text-emerald-700 border-emerald-200'>🏆 W</span>}
+                    {mem.lastResult[p.id]==='loss'&&<span title='Lost their last game' className='text-xs px-1 py-0.5 rounded border mr-1 bg-gray-50 text-gray-500 border-gray-200'>L</span>}
                     {partnerId?(
                       <button onClick={()=>unpair(p.id)} title={'Fixed partner: '+(partnerName||'?')+' — tap to unpair'} className='text-xs px-1.5 py-1 rounded-md bg-purple-100 text-purple-700 font-medium flex items-center gap-1 mr-1 max-w-[64px]'>
                         <i className='ti ti-link text-xs flex-shrink-0'/><span className='truncate'>{partnerName?partnerName.split(' ')[0]:'?'}</span>
@@ -427,6 +457,7 @@ export function OpenPlayScreen(){
             <div className='bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-700'>
               <strong>Fair rotation:</strong> Tap C1/C2 (or drag, on a mouse) to assign a waiting player. Game stops only when YOU tap Done.
               Beginners and Advanced players are never matched together, and fixed partners always join the same court as a team.
+              Players who just won tend to get suggested onto courts with other recent winners (🏆), same for recent losers, so results stay competitive and matchups keep mixing up.
             </div>
             {['Court 1','Court 2'].map(court=>{
               const cp=courts[court]
@@ -521,6 +552,7 @@ export function OpenPlayScreen(){
                                     <span className='text-xs font-medium text-dg'>{p.player_name}</span>
                                     <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
                                     {gs>0&&<span className='text-xs text-yellow-600'>{stats[p.id]?.wins}W·{stats[p.id]?.losses}L</span>}
+                                    {mem.lastResult[p.id]==='win'&&<span title='Won their last game' className='text-xs px-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200'>🏆</span>}
                                     {partner&&<span className='text-xs px-1 rounded bg-purple-100 text-purple-700 flex items-center gap-0.5'><i className='ti ti-link text-xs'/>{partner.player_name}</span>}
                                   </div>
                                   <div className='text-xs text-gray-400'>{lastDone?'Rested '+ago(new Date(lastDone).toISOString()):'Joined '+ago(p.check_in_at)}</div>
