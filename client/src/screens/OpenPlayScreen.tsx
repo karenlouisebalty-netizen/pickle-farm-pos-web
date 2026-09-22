@@ -23,7 +23,7 @@ function suggestionPriority(p,stats,now){
   return wait-games*60000 // each game adds 1min penalty
 }
 
-function getSuggestions(waiting,stats){
+function getSuggestions(waiting,stats,pairs){
   const now=Date.now()
   if(waiting.length===0)return []
   // The single longest-waiting player anchors this batch of suggestions. If they have a
@@ -34,22 +34,46 @@ function getSuggestions(waiting,stats){
   // costs them a few minutes of priority, it doesn't remove them from consideration.
   const anchor=[...waiting].sort((a,b)=>suggestionPriority(b,stats,now)-suggestionPriority(a,stats,now))[0]
   const anchorStatus=mem.lastResult[anchor.id]||null
-  const scored=waiting.map(p=>{
-    const mismatch=(anchorStatus&&mem.lastResult[p.id]&&mem.lastResult[p.id]!==anchorStatus)?1:0
-    return{p,score:suggestionPriority(p,stats,now)-mismatch*240000}
-  }).sort((a,b)=>b.score-a.score)
+  // Fixed pairs need to be treated as one unit here too — same as every other place a player
+  // can be suggested for a court — otherwise this list can show one half of a pair as if they
+  // were a normal solo "next" candidate, when assigning them for real would actually also need
+  // their partner's slot. A pair only counts as ready once BOTH are free/waiting, and its
+  // priority/win-loss-mismatch use the less-ready of the two so the pair doesn't look more
+  // overdue than it actually is.
+  const seen=new Set()
+  const scored=[]
+  for(const p of waiting){
+    if(seen.has(p.id))continue
+    const partnerId=(pairs||[]).find(pr=>pr.includes(p.id))?.find(id=>id!==p.id)
+    const partner=partnerId?waiting.find(w=>w.id===partnerId):null
+    if(partner)seen.add(partner.id)
+    seen.add(p.id)
+    const needed=partner?2:1
+    const priority=partner?Math.min(suggestionPriority(p,stats,now),suggestionPriority(partner,stats,now)):suggestionPriority(p,stats,now)
+    const pMismatch=(anchorStatus&&mem.lastResult[p.id]&&mem.lastResult[p.id]!==anchorStatus)?1:0
+    const partnerMismatch=(partner&&anchorStatus&&mem.lastResult[partner.id]&&mem.lastResult[partner.id]!==anchorStatus)?1:0
+    const mismatch=Math.max(pMismatch,partnerMismatch)
+    scored.push({p,partner,needed,score:priority-mismatch*240000})
+  }
+  scored.sort((a,b)=>b.score-a.score)
   // Same batch-compatibility rule as each court's own "Next up" box: never let this general
   // recommendation put a Beginner and an Advanced player in the same top-4 batch, so it can't imply
   // a pairing that a court's own suggestion box would refuse to offer. Skip (don't stop on) a
-  // conflicting candidate so a later, compatible one still gets a chance to fill the spot.
+  // conflicting candidate so a later, compatible one still gets a chance to fill the spot. A pair
+  // that wouldn't fit in the remaining "slots" is skipped the same way, same as a court's own box.
   const picks=[]
   const simSkills=new Set()
+  let room=4
   for(const s of scored){
-    const wouldHave=new Set([...simSkills,s.p.skill_level])
+    if(s.needed>room)continue
+    const candSkills=s.partner?[s.p.skill_level,s.partner.skill_level]:[s.p.skill_level]
+    const wouldHave=new Set([...simSkills,...candSkills])
     if(wouldHave.has('beginner')&&wouldHave.has('advanced'))continue
     picks.push(s.p)
-    simSkills.add(s.p.skill_level)
-    if(picks.length>=4)break
+    if(s.partner)picks.push(s.partner)
+    room-=s.needed
+    candSkills.forEach(sk=>simSkills.add(sk))
+    if(room<=0)break
   }
   return picks
 }
@@ -148,7 +172,7 @@ export function OpenPlayScreen(){
   const waiting=players.filter(p=>!onCourtIds.has(p.id)&&!mem.removed[p.id]&&!pausedSet.has(p.id))
   const pausedPlayers=players.filter(p=>!onCourtIds.has(p.id)&&!mem.removed[p.id]&&pausedSet.has(p.id))
   const onCourt=courts['Court 1'].length+courts['Court 2'].length
-  const suggestions=getSuggestions(waiting,stats)
+  const suggestions=getSuggestions(waiting,stats,pairs)
   const sortedWaiting=[...waiting].sort((a,b)=>{
     const _now=Date.now()
     const aL=mem.lastFinished[a.id]||new Date(a.check_in_at).getTime()
