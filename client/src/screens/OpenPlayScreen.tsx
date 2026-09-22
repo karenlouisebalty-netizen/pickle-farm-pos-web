@@ -31,9 +31,40 @@ function getSuggestions(waiting,stats){
   return sorted.slice(0,4)
 }
 
-function suggestTeams(players){
-  const sorted=[...players].sort((a,b)=>(SKILL_ORDER[b.skill_level]||1)-(SKILL_ORDER[a.skill_level]||1))
-  return{t1:[sorted[0],sorted[3]].filter(Boolean),t2:[sorted[1],sorted[2]].filter(Boolean)}
+// Beginners and Advanced players are never put in the same match — it's not a good game for
+// either side. Intermediate is the bridge: Beginner↔Intermediate and Intermediate↔Advanced are
+// both fine, same-skill matches are always fine, but a court (or a fixed pair) must never end up
+// with both a Beginner and an Advanced on it at once.
+function skillPairOk(a,b){return !((a==='beginner'&&b==='advanced')||(a==='advanced'&&b==='beginner'))}
+function courtAllowsSkills(courtPlayers,newSkills){
+  const skills=new Set([...courtPlayers.map(p=>p.skill_level),...newSkills])
+  return !(skills.has('beginner')&&skills.has('advanced'))
+}
+
+function suggestTeams(courtPlayers,pairs){
+  // Try every way to split the 4 court players into two teams of 2, and pick the one that (a)
+  // keeps a fixed pair together on the same team if one of them is on this court, (b) has played
+  // each other the least recently (mem.recentOpponents), so the same two people aren't teamed up
+  // or matched against each other again right away, and (c) is otherwise the most skill-balanced.
+  const ids=courtPlayers.map(p=>p.id)
+  const lockedPair=(pairs||[]).find(pr=>pr.every(id=>ids.includes(id)))
+  const splits=[[[0,1],[2,3]],[[0,2],[1,3]],[[0,3],[1,2]]].map(([i1,i2])=>({
+    t1:i1.map(i=>courtPlayers[i]).filter(Boolean),
+    t2:i2.map(i=>courtPlayers[i]).filter(Boolean),
+  }))
+  const valid=lockedPair
+    ? splits.filter(s=>s.t1.some(p=>p.id===lockedPair[0])===s.t1.some(p=>p.id===lockedPair[1]))
+    : splits
+  const pool=valid.length>0?valid:splits
+  function skillSum(team){return team.reduce((s,p)=>s+(SKILL_ORDER[p.skill_level]||1),0)}
+  function recentCount(t1,t2){
+    const pairsToCheck=[[t1[0],t1[1]],[t2[0],t2[1]],[t1[0],t2[0]],[t1[0],t2[1]],[t1[1],t2[0]],[t1[1],t2[1]]]
+    return pairsToCheck.reduce((n,[a,b])=>n+((a&&b&&(mem.recentOpponents[a.id]||[]).includes(b.id))?1:0),0)
+  }
+  const scored=pool.map(s=>({...s,recent:recentCount(s.t1,s.t2),skillDiff:Math.abs(skillSum(s.t1)-skillSum(s.t2))}))
+    .sort((a,b)=>(a.recent-b.recent)||(a.skillDiff-b.skillDiff))
+  const best=scored[0]
+  return{t1:best.t1,t2:best.t2}
 }
 
 export function OpenPlayScreen(){
@@ -50,6 +81,11 @@ export function OpenPlayScreen(){
   // Players a staffer has set aside — excluded from Waiting/suggestions until resumed.
   // Purely local (like op_players/op_courts) since there's no server-side concept of this.
   const [pausedIds,setPausedIds]=useState(()=>{try{const s=localStorage.getItem('op_paused');return s?JSON.parse(s):[]}catch{return[]}})
+  // Fixed partners — an array of [idA, idB] tuples. When either partner is assigned to a
+  // court (and the other is currently free/waiting), both go together, always as teammates.
+  // Purely local, same as pausedIds — there's no server-side concept of this.
+  const [pairs,setPairs]=useState(()=>{try{const s=localStorage.getItem('op_pairs');return s?JSON.parse(s):[]}catch{return[]}})
+  const [pairPickerFor,setPairPickerFor]=useState(null)
   const [confirmReset,setConfirmReset]=useState(false)
   const [confirmNew,setConfirmNew]=useState(false)
   const [sessionNum,setSessionNum]=useState(mem.currentSession||1)
@@ -98,6 +134,65 @@ export function OpenPlayScreen(){
   })
   const allowedSkills=sessionSkill==='beginner'?['beginner']:sessionSkill==='intadv'?['intermediate','advanced']:['beginner','intermediate','advanced']
 
+  function partnerIdOf(id){const pr=pairs.find(p=>p.includes(id));return pr?pr.find(x=>x!==id):null}
+  function savePairs(next){setPairs(next);localStorage.setItem('op_pairs',JSON.stringify(next))}
+  function makePair(aId,bId){
+    // Replace any existing pairing either of them was in — a player can only have one fixed
+    // partner at a time.
+    savePairs([...pairs.filter(p=>!p.includes(aId)&&!p.includes(bId)),[aId,bId]])
+    setPairPickerFor(null)
+  }
+  function unpair(id){savePairs(pairs.filter(p=>!p.includes(id)))}
+
+  // What's stopping `p` from being assigned to `court` right now, if anything — checked before
+  // every assign (button, drag) and used to disable/explain the Assign buttons in the UI. A
+  // fixed pair needs 2 open slots (they're never split across courts), and Beginner/Advanced can
+  // never end up together on the same court.
+  function assignBlockReason(p,court){
+    const cp=courts[court]
+    const partnerId=partnerIdOf(p.id)
+    const partner=partnerId?waiting.find(w=>w.id===partnerId):null
+    const needed=partner?2:1
+    if((4-cp.length)<needed)return partner?'Needs 2 open slots — fixed pair':'Court full'
+    const newSkills=partner?[p.skill_level,partner.skill_level]:[p.skill_level]
+    if(!courtAllowsSkills(cp,newSkills))return "Beginner & Advanced can't share a court"
+    return null
+  }
+
+  // Per-court "next up" candidates: skill-compatible with what's already on THIS court, a fixed
+  // pair brought along as one unit, and ranked by the same wait-time/game-count priority as
+  // getSuggestions() but with a penalty for players who've recently played the people already on
+  // this court — so the same faces don't keep getting rotated back in against each other.
+  function courtSuggestions(court){
+    const cp=courts[court]
+    const now=Date.now()
+    const seen=new Set()
+    const out=[]
+    for(const p of waiting){
+      if(seen.has(p.id))continue
+      const partnerId=partnerIdOf(p.id)
+      const partner=partnerId?waiting.find(w=>w.id===partnerId):null
+      if(partner)seen.add(partner.id)
+      seen.add(p.id)
+      const needed=partner?2:1
+      if(needed>(4-cp.length))continue
+      if(!courtAllowsSkills(cp,partner?[p.skill_level,partner.skill_level]:[p.skill_level]))continue
+      const aTime=mem.lastFinished[p.id]||new Date(p.check_in_at).getTime()
+      const bTime=partner?(mem.lastFinished[partner.id]||new Date(partner.check_in_at).getTime()):aTime
+      const readyAt=Math.max(aTime,bTime) // a pair only counts as "waiting" once BOTH are free
+      const wait=now-readyAt
+      const gs=(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)+(stats[p.id]?.draws||0)
+      const gamePenalty=gs*60000
+      const overlap=cp.reduce((n,cpP)=>{
+        const a=(mem.recentOpponents[p.id]||[]).includes(cpP.id)?1:0
+        const b=partner&&(mem.recentOpponents[partner.id]||[]).includes(cpP.id)?1:0
+        return n+a+b
+      },0)
+      out.push({p,partner,needed,score:(wait-gamePenalty)-overlap*180000})
+    }
+    return out.sort((a,b)=>b.score-a.score)
+  }
+
   async function register(){
     if(!name.trim()||!session)return
     if(!allowedSkills.includes(skill))return
@@ -106,18 +201,28 @@ export function OpenPlayScreen(){
   }
 
   async function assign(player,court){
+    // Bring a fixed partner along automatically, as long as they're actually free right now —
+    // if they're paused, already on a court, or not registered, fall back to assigning `player`
+    // alone rather than silently ignoring the tap.
+    const partnerId=partnerIdOf(player.id)
+    const partner=partnerId?waiting.find(w=>w.id===partnerId):null
+    if(assignBlockReason(player,court))return
     const key=court==='Court 1'?'court_1':'court_2'
-    await window.electronAPI.assignCourt(player.id,key)
+    const toAssign=partner?[player,partner]:[player]
+    for(const p of toAssign){await window.electronAPI.assignCourt(p.id,key)}
     const existing=courts[court]
     existing.forEach(cp=>{
-      mem.recentOpponents[player.id]=[...(mem.recentOpponents[player.id]||[]),cp.id].slice(-12)
-      mem.recentOpponents[cp.id]=[...(mem.recentOpponents[cp.id]||[]),player.id].slice(-12)
+      toAssign.forEach(p=>{
+        mem.recentOpponents[p.id]=[...(mem.recentOpponents[p.id]||[]),cp.id].slice(-12)
+        mem.recentOpponents[cp.id]=[...(mem.recentOpponents[cp.id]||[]),p.id].slice(-12)
+      })
     })
     const now=new Date().toISOString()
-    setPlayers(p=>{const n=p.map(x=>x.id===player.id?{...x,court_assigned:key,checked_out_at:null}:x);localStorage.setItem('op_players',JSON.stringify(n));return n})
+    const toAssignIds=new Set(toAssign.map(p=>p.id))
+    setPlayers(p=>{const n=p.map(x=>toAssignIds.has(x.id)?{...x,court_assigned:key,checked_out_at:null}:x);localStorage.setItem('op_players',JSON.stringify(n));return n})
     setCourts(c=>{
-      const updated={...c,[court]:[...c[court],{...player,court_assigned:key,checked_out_at:null,court_start_time:now}]}
-      if(updated[court].length===4){const suggested=suggestTeams(updated[court]);setTeams(t=>({...t,[court]:suggested}))}
+      const updated={...c,[court]:[...c[court],...toAssign.map(p=>({...p,court_assigned:key,checked_out_at:null,court_start_time:now}))]}
+      if(updated[court].length===4){const suggested=suggestTeams(updated[court],pairs);setTeams(t=>({...t,[court]:suggested}))}
       localStorage.setItem('op_courts',JSON.stringify(updated))
       return updated
     })
@@ -138,6 +243,7 @@ export function OpenPlayScreen(){
     setPlayers(prev=>{const n=prev.filter(x=>x.id!==p.id);localStorage.setItem('op_players',JSON.stringify(n));return n})
     setCourts(c=>{const n={'Court 1':c['Court 1'].filter(x=>x.id!==p.id),'Court 2':c['Court 2'].filter(x=>x.id!==p.id)};localStorage.setItem('op_courts',JSON.stringify(n));return n})
     setPausedIds(ids=>{const n=ids.filter(id=>id!==p.id);localStorage.setItem('op_paused',JSON.stringify(n));return n})
+    savePairs(pairs.filter(pr=>!pr.includes(p.id)))
     setRemoving(null)
   }
 
@@ -153,8 +259,8 @@ export function OpenPlayScreen(){
     mem.sessions.push({num:sessionNum,start:sessionStart,end:new Date().toISOString(),playerCount:players.length,players:players.map(p=>p.player_name),games:mem.history.filter(g=>g.sessionNum===sessionNum).length})
     mem.removed={};mem.lastFinished={};mem.recentOpponents={};saveMem();saveMem()
     if(startNew){const next=sessionNum+1;mem.currentSession=next;setSessionNum(next);setSessionStart(new Date().toISOString())}
-    setPlayers([]);setCourts({'Court 1':[],'Court 2':[]});setPausedIds([])
-    localStorage.setItem('op_players','[]');localStorage.setItem('op_courts',JSON.stringify({'Court 1':[],'Court 2':[]}));localStorage.setItem('op_paused','[]')
+    setPlayers([]);setCourts({'Court 1':[],'Court 2':[]});setPausedIds([]);setPairs([])
+    localStorage.setItem('op_players','[]');localStorage.setItem('op_courts',JSON.stringify({'Court 1':[],'Court 2':[]}));localStorage.setItem('op_paused','[]');localStorage.setItem('op_pairs','[]')
     setRec(null);setConfirmReset(false);setConfirmNew(false);setShowSkillPicker(true)
   }
 
@@ -181,8 +287,8 @@ export function OpenPlayScreen(){
   function onDropCourt(e,court){
     e.preventDefault()
     if(!dragPlayer)return
-    if(courts[court].length>=4)return
     if(onCourtIds.has(dragPlayer.id))return
+    if(assignBlockReason(dragPlayer,court))return
     assign(dragPlayer,court)
     setDragPlayer(null)
   }
@@ -263,6 +369,10 @@ export function OpenPlayScreen(){
                 const gs=(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)
                 const isSug1=suggestions.some(s=>s.id===p.id)
                 const isSug2=false
+                const partnerId=partnerIdOf(p.id)
+                const partnerName=partnerId?players.find(x=>x.id===partnerId)?.player_name:null
+                const c1Reason=assignBlockReason(p,'Court 1')
+                const c2Reason=assignBlockReason(p,'Court 2')
                 return(
                   <div key={p.id} draggable onDragStart={()=>onDragStart(p)} className={'flex items-center gap-2 py-1.5 border-b border-border last:border-0 px-1 rounded-lg cursor-grab '+(isSug1?'bg-green-50':isSug2?'bg-blue-50':'')}>
                     <div className='w-5 h-5 rounded-full bg-surface text-xs flex items-center justify-center text-dg font-medium flex-shrink-0'>{i+1}</div>
@@ -275,11 +385,18 @@ export function OpenPlayScreen(){
                       <div className='text-xs text-gray-400'>{lastDone?'Rested '+ago(new Date(lastDone).toISOString()):'Joined '+ago(p.check_in_at)} · {gs} game{gs!==1?'s':''}</div>
                     </div>
                     <span className={'text-xs px-1 py-0.5 rounded border mr-1 '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                    {partnerId?(
+                      <button onClick={()=>unpair(p.id)} title={'Fixed partner: '+(partnerName||'?')+' — tap to unpair'} className='text-xs px-1.5 py-1 rounded-md bg-purple-100 text-purple-700 font-medium flex items-center gap-1 mr-1 max-w-[64px]'>
+                        <i className='ti ti-link text-xs flex-shrink-0'/><span className='truncate'>{partnerName?partnerName.split(' ')[0]:'?'}</span>
+                      </button>
+                    ):(
+                      <button onClick={()=>setPairPickerFor(p)} title='Set a fixed partner' className='text-gray-300 hover:text-purple-500 text-xs p-0.5 mr-1'><i className='ti ti-link'/></button>
+                    )}
                     {/* Tap-to-assign — HTML5 drag doesn't work via touch on iPad, so this is the primary way to assign on tablet. */}
                     <div className='flex items-center gap-1 mr-1'>
-                      <button onClick={()=>assign(p,'Court 1')} disabled={courts['Court 1'].length>=4} title='Assign to Court 1'
+                      <button onClick={()=>assign(p,'Court 1')} disabled={!!c1Reason} title={c1Reason||'Assign to Court 1'}
                         className='text-xs px-1.5 py-1 rounded-md bg-dg/10 text-dg font-medium hover:bg-dg/20 disabled:opacity-30 disabled:cursor-not-allowed'>C1</button>
-                      <button onClick={()=>assign(p,'Court 2')} disabled={courts['Court 2'].length>=4} title='Assign to Court 2'
+                      <button onClick={()=>assign(p,'Court 2')} disabled={!!c2Reason} title={c2Reason||'Assign to Court 2'}
                         className='text-xs px-1.5 py-1 rounded-md bg-dg/10 text-dg font-medium hover:bg-dg/20 disabled:opacity-30 disabled:cursor-not-allowed'>C2</button>
                     </div>
                     <button onClick={()=>pausePlayer(p)} title='Pause — skip calling them for a while' className='text-gray-300 hover:text-orange-400 text-xs p-0.5'><i className='ti ti-player-pause'/></button>
@@ -309,10 +426,11 @@ export function OpenPlayScreen(){
           <div className='lg:col-span-2 space-y-4'>
             <div className='bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-700'>
               <strong>Fair rotation:</strong> Tap C1/C2 (or drag, on a mouse) to assign a waiting player. Game stops only when YOU tap Done.
+              Beginners and Advanced players are never matched together, and fixed partners always join the same court as a team.
             </div>
             {['Court 1','Court 2'].map(court=>{
               const cp=courts[court]
-              const sug=suggestions
+              const sug=courtSuggestions(court)
               const startTime=cp[0]?.court_start_time
               const mins=elapsed(startTime)
               const isC1=court==='Court 1'
@@ -381,28 +499,41 @@ export function OpenPlayScreen(){
                           <i className='ti ti-sparkles'/>
                           {'Next up — longest waiting (' + (4-cp.length) + ' spot' + (4-cp.length!==1?'s':'') + ')'}
                         </div>
-                        {sug.slice(0,4-cp.length).map((p,i)=>{
-                          const lastDone=mem.lastFinished[p.id]
-                          const gs=(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)
-                          return(
-                            <div key={p.id} className={'flex items-center gap-2 p-2.5 rounded-lg mb-1.5 last:mb-0 border '+'bg-olive/10 border-olive/30'}>
-                              <div className='w-5 h-5 rounded-full bg-white text-xs flex items-center justify-center font-bold text-gray-400 flex-shrink-0'>{i+1}</div>
-                              <div className='flex-1'>
-                                <div className='flex items-center gap-1.5 flex-wrap'>
-                                  <span className='text-xs font-medium text-dg'>{p.player_name}</span>
-                                  <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
-                                  {gs>0&&<span className='text-xs text-yellow-600'>{stats[p.id]?.wins}W·{stats[p.id]?.losses}L</span>}
+                        {(()=>{
+                          // Fill the open slots from the ranked, skill-compatible candidate list —
+                          // a fixed pair counts as 2 slots, so stop once the remaining room runs out.
+                          let room=4-cp.length
+                          const picks=[]
+                          for(const s of sug){
+                            if(s.needed>room)continue
+                            picks.push(s)
+                            room-=s.needed
+                            if(room<=0)break
+                          }
+                          return picks.map(({p,partner},i)=>{
+                            const lastDone=mem.lastFinished[p.id]
+                            const gs=(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)
+                            return(
+                              <div key={p.id} className={'flex items-center gap-2 p-2.5 rounded-lg mb-1.5 last:mb-0 border '+'bg-olive/10 border-olive/30'}>
+                                <div className='w-5 h-5 rounded-full bg-white text-xs flex items-center justify-center font-bold text-gray-400 flex-shrink-0'>{i+1}</div>
+                                <div className='flex-1'>
+                                  <div className='flex items-center gap-1.5 flex-wrap'>
+                                    <span className='text-xs font-medium text-dg'>{p.player_name}</span>
+                                    <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                                    {gs>0&&<span className='text-xs text-yellow-600'>{stats[p.id]?.wins}W·{stats[p.id]?.losses}L</span>}
+                                    {partner&&<span className='text-xs px-1 rounded bg-purple-100 text-purple-700 flex items-center gap-0.5'><i className='ti ti-link text-xs'/>{partner.player_name}</span>}
+                                  </div>
+                                  <div className='text-xs text-gray-400'>{lastDone?'Rested '+ago(new Date(lastDone).toISOString()):'Joined '+ago(p.check_in_at)}</div>
                                 </div>
-                                <div className='text-xs text-gray-400'>{lastDone?'Rested '+ago(new Date(lastDone).toISOString()):'Joined '+ago(p.check_in_at)}</div>
+                                <button onClick={()=>assign(p,court)} className='text-xs px-3 py-1.5 rounded-lg bg-dg text-white font-medium whitespace-nowrap'>{partner?'Assign Pair':'Assign'}</button>
                               </div>
-                              <button onClick={()=>assign(p,court)} className='text-xs px-3 py-1.5 rounded-lg bg-dg text-white font-medium whitespace-nowrap'>Assign</button>
-                            </div>
-                          )
-                        })}
+                            )
+                          })
+                        })()}
                       </div>
                     )}
                     {cp.length===0&&waiting.length===0&&(<div className='text-center py-4 text-gray-400 text-xs'>Register players above to get started</div>)}
-                    {(4-cp.length)>0&&sug.length===0&&waiting.length>0&&(<div className='text-center py-3 text-gray-400 text-xs'>All waiting players already suggested</div>)}
+                    {(4-cp.length)>0&&sug.length===0&&waiting.length>0&&(<div className='text-center py-3 text-gray-400 text-xs'>No waiting players fit this court right now (skill level or open slots)</div>)}
                   </div>
                 </div>
               )
@@ -535,7 +666,7 @@ export function OpenPlayScreen(){
               </div>
             )}
             <div className='flex gap-2'>
-              <button onClick={()=>{const s=suggestTeams(courts[showTeamPicker]);setTeams(t=>({...t,[showTeamPicker]:s}))}} className='flex-1 py-2 rounded-lg border border-border text-xs text-gray-600'>Auto-balance</button>
+              <button onClick={()=>{const s=suggestTeams(courts[showTeamPicker],pairs);setTeams(t=>({...t,[showTeamPicker]:s}))}} className='flex-1 py-2 rounded-lg border border-border text-xs text-gray-600'>Auto-balance</button>
               <button onClick={()=>setShowTeamPicker(null)} className='flex-1 py-2 rounded-lg bg-dg text-white text-sm font-medium'>Done</button>
             </div>
           </div>
@@ -616,6 +747,25 @@ export function OpenPlayScreen(){
               <button onClick={()=>setConfirmReset(false)} className='flex-1 py-2 rounded-lg bg-surface border border-border text-sm text-gray-600'>Cancel</button>
               <button onClick={()=>endSession(false)} className='flex-1 py-2 rounded-lg bg-maroon text-white text-sm font-medium'>Reset</button>
             </div>
+          </div>
+        </div>
+      )}
+      {pairPickerFor&&(
+        <div className='fixed inset-0 bg-black/50 flex items-center justify-center z-50'>
+          <div className='bg-white rounded-xl p-5 w-72 border border-border shadow-xl'>
+            <h3 className='text-sm font-medium text-dg mb-1'>Set fixed partner</h3>
+            <p className='text-xs text-gray-500 mb-4'>{pairPickerFor.player_name} will always be assigned to a court together with their partner, as a team.</p>
+            <div className='max-h-64 overflow-y-auto space-y-1 mb-4'>
+              {waiting.filter(w=>w.id!==pairPickerFor.id&&!partnerIdOf(w.id)&&skillPairOk(w.skill_level,pairPickerFor.skill_level)).length===0?(
+                <p className='text-xs text-gray-400 text-center py-3'>No other unpaired, skill-compatible players waiting</p>
+              ):waiting.filter(w=>w.id!==pairPickerFor.id&&!partnerIdOf(w.id)&&skillPairOk(w.skill_level,pairPickerFor.skill_level)).map(w=>(
+                <button key={w.id} onClick={()=>makePair(pairPickerFor.id,w.id)} className='w-full flex items-center gap-2 p-2 rounded-lg border border-border hover:border-olive hover:bg-olive/5 text-left'>
+                  <span className='text-xs font-medium text-dg flex-1'>{w.player_name}</span>
+                  <span className={'text-xs px-1 border rounded '+SC[w.skill_level]}>{SS[w.skill_level]}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>setPairPickerFor(null)} className='w-full py-2 rounded-lg bg-surface border border-border text-sm text-gray-600'>Cancel</button>
           </div>
         </div>
       )}
