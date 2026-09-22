@@ -15,21 +15,30 @@ function wr(s){const g=(s.wins||0)+(s.losses||0);return g?Math.round((s.wins||0)
 function fmtTime(iso){return new Date(iso).toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'})}
 function elapsed(iso){return iso?Math.floor((Date.now()-new Date(iso).getTime())/60000):0}
 
+function suggestionPriority(p,stats,now){
+  const t=mem.lastFinished[p.id]||new Date(p.check_in_at).getTime()
+  const wait=now-t
+  // Players with fewer total games get priority bonus
+  const games=(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)+(stats[p.id]?.draws||0)
+  return wait-games*60000 // each game adds 1min penalty
+}
+
 function getSuggestions(waiting,stats){
   const now=Date.now()
-  const sorted=[...waiting].sort((a,b)=>{
-    const aTime=mem.lastFinished[a.id]||new Date(a.check_in_at).getTime()
-    const bTime=mem.lastFinished[b.id]||new Date(b.check_in_at).getTime()
-    const aWait=now-aTime
-    const bWait=now-bTime
-    // Players with fewer total games get priority bonus
-    const aGames=(stats[a.id]?.wins||0)+(stats[a.id]?.losses||0)+(stats[a.id]?.draws||0)
-    const bGames=(stats[b.id]?.wins||0)+(stats[b.id]?.losses||0)+(stats[b.id]?.draws||0)
-    const aGamePenalty=aGames*60000 // each game adds 1min penalty
-    const bGamePenalty=bGames*60000
-    return (bWait-bGamePenalty)-(aWait-aGamePenalty)
+  if(waiting.length===0)return []
+  // The single longest-waiting player anchors this batch of suggestions. If they have a
+  // known win/loss result, players who share it are favored for the remaining "Next" spots
+  // — same weighting as the per-court suggestion ranking — so a winner-heavy or loser-heavy
+  // batch naturally surfaces together here too, not just once a court already has players on
+  // it. A player who's waited much longer still isn't shut out entirely: the penalty just
+  // costs them a few minutes of priority, it doesn't remove them from consideration.
+  const anchor=[...waiting].sort((a,b)=>suggestionPriority(b,stats,now)-suggestionPriority(a,stats,now))[0]
+  const anchorStatus=mem.lastResult[anchor.id]||null
+  const scored=waiting.map(p=>{
+    const mismatch=(anchorStatus&&mem.lastResult[p.id]&&mem.lastResult[p.id]!==anchorStatus)?1:0
+    return{p,score:suggestionPriority(p,stats,now)-mismatch*240000}
   })
-  return sorted.slice(0,4)
+  return scored.sort((a,b)=>b.score-a.score).slice(0,4).map(s=>s.p)
 }
 
 // Beginners and Advanced players are never put in the same match — it's not a good game for
