@@ -139,6 +139,11 @@ export const api = {
   // Cashier-accessible — always today, server-computed (see reports.routes.ts). Used by the
   // Daily Sales screen so staff can check the drawer without seeing revenue history.
   getTodaySummary:  (branchId: string) => request<DailySummary>('GET', `/reports/today${qs({ branchId })}`),
+  // Any signed-in role — set/correct the drawer's starting cash (float) for a given day.
+  // Included in every getDailySummary/getTodaySummary response after this as starting_cash
+  // (summed over the queried range) and expected_cash_total (starting_cash + net cash).
+  setStartingCash:  (branchId: string, date: string, amount: number, userId?: string) =>
+    request<{ branch_id: string; date: string; amount: number }>('POST', '/reports/starting-cash', { branchId, date, amount, userId }),
 
   // ── Auth ──
   login: async (userId: string, pin: string): Promise<Session> => {

@@ -21,3 +21,15 @@ reportRoutes.get('/today', requireAuth, (req, res) => {
   const today = new Date().toISOString().slice(0, 10)
   res.json(ReportService.getDailySummary(branchId, today, today))
 })
+
+// Any authenticated role — whoever opens the register counts and enters the starting cash
+// (change fund) for the day, same as a cashier counting the drawer. Not restricted to today
+// only: a manager fixing yesterday's entry after the fact is a normal correction, not a way
+// to inflate revenue (this table only feeds the drawer-reconciliation total, never sales).
+reportRoutes.post('/starting-cash', requireAuth, (req, res) => {
+  const { branchId, date, amount, userId } = req.body as { branchId: string; date: string; amount: number; userId?: string }
+  if (!branchId || !date || typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) {
+    return res.status(400).json({ error: 'branchId, date and a non-negative amount are required' })
+  }
+  res.json(ReportService.setStartingCash(branchId, date, amount, userId))
+})

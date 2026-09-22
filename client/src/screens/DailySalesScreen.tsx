@@ -31,6 +31,9 @@ export function DailySalesScreen() {
   const [loading, setLoading] = useState(true)
   const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null)
   const [markingPaid, setMarkingPaid] = useState<string | null>(null)
+  const [startingCashInput, setStartingCashInput] = useState('')
+  const [editingStartingCash, setEditingStartingCash] = useState(false)
+  const [savingStartingCash, setSavingStartingCash] = useState(false)
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -47,10 +50,12 @@ export function DailySalesScreen() {
       // and showing them here would make the list not add up to the totals above.
       setTransactions((txns || []).filter((t: any) => t.status === 'completed'))
       setLastLoadedAt(new Date())
+      // Don't stomp on whatever the cashier is mid-typing during the 60s auto-refresh.
+      setStartingCashInput(prev => (editingStartingCash ? prev : String(sum?.starting_cash ?? 0)))
     } finally {
       if (showSpinner) setLoading(false)
     }
-  }, [session, today])
+  }, [session, today, editingStartingCash])
 
   useEffect(() => { load(true) }, [load])
 
@@ -59,6 +64,22 @@ export function DailySalesScreen() {
     const id = setInterval(() => load(false), 60000)
     return () => clearInterval(id)
   }, [load])
+
+  async function handleSaveStartingCash() {
+    if (!session) return
+    const parsed = Number(startingCashInput)
+    if (!Number.isFinite(parsed) || parsed < 0) return
+    setSavingStartingCash(true)
+    try {
+      await window.electronAPI.setStartingCash(session.branch_id, today, parsed, session.user_id)
+      setEditingStartingCash(false)
+      await load(false)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to save starting cash')
+    } finally {
+      setSavingStartingCash(false)
+    }
+  }
 
   async function handleMarkPaid(txnId: string) {
     setMarkingPaid(txnId)
@@ -104,9 +125,64 @@ export function DailySalesScreen() {
       <div className="p-4 sm:p-6 space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <MetricCard accent icon="ti-currency-peso" label="Total Sales Today" value={fmt(summary?.total_revenue)} sub={`${summary?.transaction_count || 0} transactions`} />
-          <MetricCard icon="ti-cash" label="Cash Collected" value={fmt(cashTotal)} sub="Should match your drawer" />
+          <MetricCard icon="ti-cash" label="Cash Sales" value={fmt(cashTotal)} sub="Net of change given" />
           <MetricCard icon="ti-clock" label="Outstanding (Unpaid)" value={fmt(summary?.outstanding_total)} sub={(summary?.outstanding_total || 0) > 0 ? 'Still owed to you' : 'All settled'} />
           <MetricCard icon="ti-tag" label="Discounts Given" value={fmt(summary?.discount_total)} sub="Today" />
+        </div>
+
+        {/* Cash drawer — starting float + today's net cash sales = what should be counted at close */}
+        <div className="bg-white rounded-xl border border-border p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-dg">Cash Drawer</span>
+            {!editingStartingCash && (
+              <button
+                onClick={() => setEditingStartingCash(true)}
+                className="text-xs font-medium text-olive hover:opacity-80"
+              >
+                {summary?.starting_cash > 0 ? 'Edit starting cash' : 'Set starting cash'}
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Starting cash (float)</div>
+              {editingStartingCash ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-gray-400">₱</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    autoFocus
+                    value={startingCashInput}
+                    onChange={e => setStartingCashInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSaveStartingCash()}
+                    className="w-28 border border-border rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-olive"
+                  />
+                  <button
+                    onClick={handleSaveStartingCash}
+                    disabled={savingStartingCash}
+                    className="text-xs font-medium text-white bg-dg rounded-lg px-2.5 py-1.5 disabled:opacity-50"
+                  >
+                    {savingStartingCash ? '...' : 'Save'}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-lg font-medium text-dg">{fmt(summary?.starting_cash)}</div>
+              )}
+              <div className="text-xs text-gray-400 mt-0.5">What was in the drawer at the start of today</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">+ Net cash sales</div>
+              <div className="text-lg font-medium text-dg">{fmt(cashTotal)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">Cash tendered minus change given</div>
+            </div>
+            <div className="bg-surface rounded-lg p-2.5 -m-0.5">
+              <div className="text-xs text-gray-500 mb-1">= Expected in drawer</div>
+              <div className="text-lg font-semibold text-dg">{fmt(summary?.expected_cash_total)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">Count your drawer against this</div>
+            </div>
+          </div>
         </div>
 
         {summary && summary.collected_total > 0 && (

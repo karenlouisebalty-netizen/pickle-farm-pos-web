@@ -265,6 +265,11 @@ export interface DailySummary {
   top_items: Array<{ name: string; qty: number; revenue: number }>
   open_play_count: number
   court_rental_count: number
+  /** Cash float staff started the drawer with, summed across every day in this range. */
+  starting_cash: number
+  /** What should physically be in the drawer: starting_cash + net cash collected
+   *  (payment_breakdown.cash, which is already change-adjusted). */
+  expected_cash_total: number
 }
 
 export interface Session {

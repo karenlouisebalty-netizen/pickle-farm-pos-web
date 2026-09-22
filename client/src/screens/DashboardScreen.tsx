@@ -224,6 +224,33 @@ export function DashboardScreen() {
             )}
           </div>
         </div>
+        {/* Cash drawer — starting float(s) + net cash sales for the selected range. Editing the
+            float only happens on Daily Sales (today-only, where "count your drawer" makes sense);
+            here it's just rolled into the numbers so the dashboard still shows the full picture. */}
+        <div className="bg-white rounded-xl border border-border p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-medium text-dg">Cash Drawer</span>
+            <button onClick={() => navigate("/daily-sales")} className="text-xs text-olive hover:underline">Set today's starting cash</button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Starting cash ({rangeLabel})</div>
+              <div className="text-lg font-medium text-dg">{fmt(summary?.starting_cash)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">Float(s) staff started the drawer with</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 mb-1">+ Net cash sales</div>
+              <div className="text-lg font-medium text-dg">{fmt(summary?.payment_breakdown?.cash)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">Cash tendered minus change given</div>
+            </div>
+            <div className="bg-surface rounded-lg p-2.5 -m-0.5">
+              <div className="text-xs text-gray-500 mb-1">= Expected in drawer</div>
+              <div className="text-lg font-semibold text-dg">{fmt(summary?.expected_cash_total)}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{range === 'today' ? "Count today's drawer against this" : 'Meaningful for "Today" — a range sums multiple days\' floats'}</div>
+            </div>
+          </div>
+        </div>
+
         {/* Expenses Section */}
         <div className="bg-white rounded-xl border border-border p-4">
           <div className="flex items-center justify-between mb-3">

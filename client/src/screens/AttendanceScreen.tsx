@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useSessionStore } from '../stores/sessionStore'
 import { formatPeso } from '../shared/utils'
 import type { AttendanceLog, AttendanceSummaryRow, User, ClockType } from '../shared/types'
@@ -248,12 +248,52 @@ function DailyRateInput({ user, onSaved }: { user: User; onSaved: (userId: strin
   )
 }
 
+function fmtDay(dateStr: string) {
+  return new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-PH', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+/** Expandable per-day breakdown for one staff member's month — hours worked and break time
+ *  consumed each day, straight from the summary the server already computes (AttendanceSummaryRow.days). */
+function DayBreakdownRows({ row }: { row: AttendanceSummaryRow }) {
+  return (
+    <tr>
+      <td colSpan={6} className="bg-surface/60 px-4 py-3">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-gray-400">
+              <th className="font-medium py-1 pr-2">Date</th>
+              <th className="font-medium py-1 pr-2 text-right">Hours Worked</th>
+              <th className="font-medium py-1 pr-2 text-right">Break Time</th>
+              <th className="font-medium py-1 text-right">Paid</th>
+            </tr>
+          </thead>
+          <tbody>
+            {row.days.map(d => (
+              <tr key={d.date} className="border-t border-border/60">
+                <td className="py-1.5 pr-2 text-gray-600">{fmtDay(d.date)}</td>
+                <td className="py-1.5 pr-2 text-right text-dg">{d.hours.toFixed(2)} hrs</td>
+                <td className="py-1.5 pr-2 text-right text-gray-500">{d.break_hours > 0 ? `${d.break_hours.toFixed(2)} hrs` : '—'}</td>
+                <td className="py-1.5 text-right">
+                  {d.paid
+                    ? <span className="text-[10px] font-medium bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Paid</span>
+                    : <span className="text-[10px] font-medium bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">Not paid</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </td>
+    </tr>
+  )
+}
+
 export function AttendanceScreen() {
   const session = useSessionStore(s => s.session)
   const branchId = session?.branch_id || 'branch-pf-001'
   const [tab, setTab] = useState<'summary' | 'photos' | 'staff'>('summary')
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [summary, setSummary] = useState<AttendanceSummaryRow[]>([])
+  const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set())
   const [logs, setLogs] = useState<AttendanceLog[]>([])
   const [staffList, setStaffList] = useState<User[]>([])
   const [staffFilter, setStaffFilter] = useState<string>('all')
@@ -337,16 +377,34 @@ export function AttendanceScreen() {
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.map(r => (
-                    <tr key={r.user_id} className="border-b border-border last:border-0">
-                      <td className="py-3 px-4 font-medium text-dg">{r.full_name}</td>
-                      <td className="py-3 px-4 text-right text-dg">{r.days_present}</td>
-                      <td className="py-3 px-4 text-right text-dg">{r.total_hours.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right text-gray-500">{r.total_break_hours.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right text-gray-500">{formatPeso(r.daily_rate)}/day</td>
-                      <td className="py-3 px-4 text-right font-semibold text-dg">{formatPeso(r.total_salary)}</td>
-                    </tr>
-                  ))}
+                  {summary.map(r => {
+                    const expanded = expandedUsers.has(r.user_id)
+                    return (
+                      <Fragment key={r.user_id}>
+                        <tr
+                          onClick={() => setExpandedUsers(prev => {
+                            const next = new Set(prev)
+                            if (next.has(r.user_id)) next.delete(r.user_id); else next.add(r.user_id)
+                            return next
+                          })}
+                          className="border-b border-border last:border-0 cursor-pointer hover:bg-surface/50"
+                        >
+                          <td className="py-3 px-4 font-medium text-dg">
+                            <span className="flex items-center gap-1.5">
+                              <i className={`ti ti-chevron-right text-xs text-gray-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                              {r.full_name}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right text-dg">{r.days_present}</td>
+                          <td className="py-3 px-4 text-right text-dg">{r.total_hours.toFixed(2)}</td>
+                          <td className="py-3 px-4 text-right text-gray-500">{r.total_break_hours.toFixed(2)}</td>
+                          <td className="py-3 px-4 text-right text-gray-500">{formatPeso(r.daily_rate)}/day</td>
+                          <td className="py-3 px-4 text-right font-semibold text-dg">{formatPeso(r.total_salary)}</td>
+                        </tr>
+                        {expanded && <DayBreakdownRows row={r} />}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="bg-surface">
