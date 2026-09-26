@@ -144,6 +144,16 @@ export function OpenPlayScreen(){
   const [teams,setTeams]=useState({'Court 1':{t1:[],t2:[]},'Court 2':{t1:[],t2:[]}})
   const [showTeamPicker,setShowTeamPicker]=useState(null)
   const [teamDrag,setTeamDrag]=useState(null)
+  // "Next Game 1-4" planning queue — a staffer can override the auto-recommended lineup for
+  // any of the next 4 games and pre-pick which court it'll play on, then assign the whole
+  // game in one click instead of tapping Assign per player. null = still using the auto
+  // recommendation for that slot; an array = an explicit, staff-edited list of player ids
+  // (overriding the recommendation entirely for that slot). Purely transient UI state, not
+  // persisted — like `rec`/`winner`/`tab`, it's for planning the next few minutes, not
+  // something that needs to survive a page reload.
+  const [gameOverride,setGameOverride]=useState([null,null,null,null])
+  const [gameCourt,setGameCourt]=useState(['','','',''])
+  const [gameError,setGameError]=useState(null)
   const timerRef=useRef(null)
 
   useEffect(()=>{
@@ -173,6 +183,31 @@ export function OpenPlayScreen(){
   const pausedPlayers=players.filter(p=>!onCourtIds.has(p.id)&&!mem.removed[p.id]&&pausedSet.has(p.id))
   const onCourt=courts['Court 1'].length+courts['Court 2'].length
   const suggestions=getSuggestions(waiting,stats,pairs)
+  // The 4 "Next Game" slots. A slot with an explicit override (`gameOverride[i]` is an array,
+  // not null) shows exactly those player ids — resolved back to live player objects, so anyone
+  // who's stopped waiting since (assigned elsewhere, paused, removed) just drops off the slot
+  // rather than showing stale data. A slot still on "auto" gets the next available recommended
+  // batch: `getSuggestions` is re-run on a pool that has every manually-reserved player (in ANY
+  // slot) removed first, then run again on whatever's left after each auto batch is drawn, so
+  // slots 2-4 recommend the players slot 1 (and any earlier auto slot) didn't already claim,
+  // and nobody manually placed in one slot is also suggested for another.
+  const manuallyReservedIds=new Set(gameOverride.flatMap(o=>o||[]))
+  let autoPool=waiting.filter(p=>!manuallyReservedIds.has(p.id))
+  const autoBatches=[]
+  for(let gi=0;gi<4;gi++){
+    if(gameOverride[gi])continue
+    const picks=getSuggestions(autoPool,stats,pairs)
+    autoBatches.push(picks)
+    const usedIds=new Set(picks.map(p=>p.id))
+    autoPool=autoPool.filter(p=>!usedIds.has(p.id))
+  }
+  let autoIdx=0
+  const gameDisplay=gameOverride.map(o=>{
+    if(o)return o.map(id=>waiting.find(w=>w.id===id)).filter(Boolean)
+    return autoBatches[autoIdx++]||[]
+  })
+  const gameSlotIds=new Set(gameDisplay.flat().map(p=>p.id))
+  const gameAddCandidates=waiting.filter(p=>!gameSlotIds.has(p.id))
   const sortedWaiting=[...waiting].sort((a,b)=>{
     const _now=Date.now()
     const aL=mem.lastFinished[a.id]||new Date(a.check_in_at).getTime()
@@ -295,6 +330,99 @@ export function OpenPlayScreen(){
       return updated
     })
     saveMem()
+  }
+
+  // ── "Next Game" planning helpers ──────────────────────────────────────
+  // A manual add/remove always expands a slot to an explicit override list (starting from
+  // whatever's currently displayed — auto or already-overridden — so a single edit doesn't
+  // silently discard the rest of the recommended lineup).
+  function expandWithPartners(playerIds){
+    const finalList=[]
+    const seen=new Set()
+    for(const id of playerIds){
+      if(seen.has(id))continue
+      const p=waiting.find(w=>w.id===id)
+      if(!p)continue
+      seen.add(id)
+      finalList.push(p)
+      const partnerId=partnerIdOf(id)
+      if(partnerId&&!seen.has(partnerId)){
+        const partner=waiting.find(w=>w.id===partnerId)
+        if(partner){seen.add(partnerId);finalList.push(partner)}
+      }
+    }
+    return finalList
+  }
+
+  function resetGame(i){
+    setGameOverride(prev=>{const n=[...prev];n[i]=null;return n})
+  }
+
+  function removeFromGame(i,playerId){
+    const current=gameOverride[i]?[...gameOverride[i]]:gameDisplay[i].map(p=>p.id)
+    const next=current.filter(id=>id!==playerId)
+    setGameOverride(prev=>{const n=[...prev];n[i]=next;return n})
+  }
+
+  function addToGame(i,playerId){
+    const current=gameOverride[i]?[...gameOverride[i]]:gameDisplay[i].map(p=>p.id)
+    if(current.includes(playerId))return
+    if(current.length>=4)return
+    let next=[...current,playerId]
+    const partnerId=partnerIdOf(playerId)
+    if(partnerId&&!next.includes(partnerId)&&waiting.some(w=>w.id===partnerId)&&next.length<4){
+      next=[...next,partnerId]
+    }
+    setGameOverride(prev=>{const n=[...prev];n[i]=next;return n})
+  }
+
+  // Bulk-assigns an entire "Next Game" slot to its chosen court in one click. Unlike assign()
+  // (built for one player/pair at a time, checked one at a time), this validates the WHOLE
+  // group against the court's remaining capacity and skill compatibility up front — all or
+  // nothing — and performs a single batched state update, so a slot's players never end up
+  // partially assigned or over-filling a court.
+  async function assignGameToCourt(gameIndex){
+    const court=gameCourt[gameIndex]
+    if(!court)return
+    const ids=gameDisplay[gameIndex].map(p=>p.id)
+    if(ids.length===0)return
+    const finalList=expandWithPartners(ids)
+    const cp=courts[court]
+    if(finalList.length>(4-cp.length)){
+      // finalList can be bigger than the visible slot (`ids`) when one of these players has a
+      // fixed partner who isn't shown in this slot's card — call that out explicitly, since
+      // otherwise "needs 5" is confusing when the card only lists 4 names.
+      const hiddenPartners=finalList.length-ids.length
+      const partnerNote=hiddenPartners>0?` (includes ${hiddenPartners===1?'a fixed partner':hiddenPartners+' fixed partners'} not shown in this slot)`:''
+      setGameError(`${court} only has ${4-cp.length} open slot${4-cp.length!==1?'s':''} — this game needs ${finalList.length}${partnerNote}.`)
+      return
+    }
+    const newSkills=finalList.map(p=>p.skill_level)
+    if(!courtAllowsSkills(cp,newSkills)){
+      setGameError(`Can't assign — ${court} would end up with both a Beginner and an Advanced player.`)
+      return
+    }
+    setGameError(null)
+    const key=court==='Court 1'?'court_1':'court_2'
+    for(const p of finalList){await window.electronAPI.assignCourt(p.id,key)}
+    cp.forEach(cpP=>{
+      finalList.forEach(p=>{
+        mem.recentOpponents[p.id]=[...(mem.recentOpponents[p.id]||[]),cpP.id].slice(-12)
+        mem.recentOpponents[cpP.id]=[...(mem.recentOpponents[cpP.id]||[]),p.id].slice(-12)
+      })
+    })
+    const now=new Date().toISOString()
+    const finalIds=new Set(finalList.map(p=>p.id))
+    setPlayers(p=>{const n=p.map(x=>finalIds.has(x.id)?{...x,court_assigned:key,checked_out_at:null}:x);localStorage.setItem('op_players',JSON.stringify(n));return n})
+    setCourts(c=>{
+      const updated={...c,[court]:[...c[court],...finalList.map(p=>({...p,court_assigned:key,checked_out_at:null,court_start_time:now}))]}
+      if(updated[court].length===4){const suggested=suggestTeams(updated[court],pairs);setTeams(t=>({...t,[court]:suggested}))}
+      localStorage.setItem('op_courts',JSON.stringify(updated))
+      return updated
+    })
+    saveMem()
+    setGameOverride(prev=>{const n=[...prev];n[gameIndex]=null;return n})
+    setGameCourt(prev=>{const n=[...prev];n[gameIndex]='';return n})
   }
 
   async function donePlayer(player){
@@ -441,7 +569,7 @@ export function OpenPlayScreen(){
               ):sortedWaiting.map((p,i)=>{
                 const lastDone=mem.lastFinished[p.id]
                 const gs=(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)
-                const isSug1=suggestions.some(s=>s.id===p.id)
+                const isSug1=gameDisplay[0].some(s=>s.id===p.id)
                 const isSug2=false
                 const partnerId=partnerIdOf(p.id)
                 const partnerName=partnerId?players.find(x=>x.id===partnerId)?.player_name:null
@@ -633,22 +761,59 @@ export function OpenPlayScreen(){
               )
             })}
             {waiting.length>0&&(
-              <div className='bg-white rounded-xl border border-border overflow-hidden'>
-                <div className='px-4 py-3 border-b border-border bg-surface flex items-center gap-2'>
-                  <i className='ti ti-clock text-olive text-sm'/>
-                  <span className='text-sm font-medium text-dg'>Up Next</span>
-                  <span className='text-xs text-gray-400'>Recommended players for next rotation</span>
-                </div>
-                <div className='p-3'>
-                  {suggestions.length===0?(<p className='text-xs text-gray-400 text-center py-2'>Not enough players waiting</p>):suggestions.slice(0,4).map((p,i)=>(
-                    <div key={p.id} className='flex items-center gap-2 p-1.5 bg-white rounded border border-border mb-1 last:mb-0'>
-                      <div className='w-5 h-5 rounded-full bg-olive text-white text-xs flex items-center justify-center font-medium flex-shrink-0'>{i+1}</div>
-                      <span className='text-xs font-medium text-dg flex-1'>{p.player_name}</span>
-                      <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
-                      {((stats[p.id]?.wins||0)+(stats[p.id]?.losses||0))>0&&<span className='text-xs text-yellow-600 font-medium'>{(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)} games</span>}
-                      <span className='text-xs text-gray-400'>{mem.lastFinished[p.id]?'Rested '+ago(new Date(mem.lastFinished[p.id]).toISOString()):'Joined '+ago(p.check_in_at)}</span>
-                    </div>
-                  ))}
+              <div className='space-y-3'>
+                {gameError&&(
+                  <div className='bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg px-3 py-2'>{gameError}</div>
+                )}
+                <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+                  {[0,1,2,3].map(i=>{
+                    const slot=gameDisplay[i]
+                    const isOverridden=!!gameOverride[i]
+                    const roomLeft=4-slot.length
+                    return(
+                      <div key={i} className='bg-white rounded-xl border border-border overflow-hidden'>
+                        <div className='px-3 py-2 border-b border-border bg-surface flex items-center gap-2'>
+                          <span className='text-sm font-medium text-dg'>Next Game {i+1}</span>
+                          {isOverridden?(
+                            <button onClick={()=>resetGame(i)} className='text-xs text-olive underline'>Reset to recommended</button>
+                          ):(
+                            <span className='text-xs text-gray-400'>Recommended</span>
+                          )}
+                          <div className='flex-1'/>
+                          <select value={gameCourt[i]} onChange={e=>{const v=e.target.value;setGameCourt(prev=>{const n=[...prev];n[i]=v;return n})}} className='text-xs border border-border rounded px-1.5 py-1'>
+                            <option value=''>Court…</option>
+                            <option value='Court 1'>Court 1</option>
+                            <option value='Court 2'>Court 2</option>
+                          </select>
+                          <button onClick={()=>assignGameToCourt(i)} disabled={!gameCourt[i]||slot.length===0} className='text-xs px-2.5 py-1 rounded-lg bg-dg text-white font-medium whitespace-nowrap disabled:opacity-40'>Assign to Court</button>
+                        </div>
+                        <div className='p-2.5'>
+                          {slot.length===0?(
+                            <p className='text-xs text-gray-400 text-center py-2'>No players in this slot</p>
+                          ):slot.map((p,idx)=>{
+                            const partnerId=partnerIdOf(p.id)
+                            const partner=partnerId?slot.find(sp=>sp.id===partnerId):null
+                            return(
+                              <div key={p.id} className='flex items-center gap-2 p-1.5 bg-white rounded border border-border mb-1 last:mb-0'>
+                                <div className='w-5 h-5 rounded-full bg-olive text-white text-xs flex items-center justify-center font-medium flex-shrink-0'>{idx+1}</div>
+                                <span className='text-xs font-medium text-dg flex-1'>{p.player_name}</span>
+                                <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                                {((stats[p.id]?.wins||0)+(stats[p.id]?.losses||0))>0&&<span className='text-xs text-yellow-600 font-medium'>{(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)}g</span>}
+                                {partner&&<span title={'Fixed pair with '+partner.player_name} className='text-xs px-1 rounded bg-purple-100 text-purple-700'><i className='ti ti-link text-xs'/></span>}
+                                <button onClick={()=>removeFromGame(i,p.id)} title='Remove from this slot' className='text-xs w-5 h-5 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500 flex items-center justify-center flex-shrink-0'>×</button>
+                              </div>
+                            )
+                          })}
+                          {roomLeft>0&&gameAddCandidates.length>0&&(
+                            <select value='' onChange={e=>{if(e.target.value)addToGame(i,e.target.value)}} className='mt-1.5 w-full text-xs border border-border rounded px-1.5 py-1 text-gray-500'>
+                              <option value=''>+ Add a waiting player…</option>
+                              {gameAddCandidates.map(p=><option key={p.id} value={p.id}>{p.player_name} ({SS[p.skill_level]})</option>)}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
