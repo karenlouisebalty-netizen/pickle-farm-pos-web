@@ -78,11 +78,13 @@ function getSuggestions(waiting,stats,pairs){
   return picks
 }
 
-// Beginners and Advanced players are never put in the same match — it's not a good game for
-// either side. Intermediate is the bridge: Beginner↔Intermediate and Intermediate↔Advanced are
-// both fine, same-skill matches are always fine, but a court (or a fixed pair) must never end up
-// with both a Beginner and an Advanced on it at once.
-function skillPairOk(a,b){return !((a==='beginner'&&b==='advanced')||(a==='advanced'&&b==='beginner'))}
+// This is a RECOMMENDATION preference, not a hard rule — Beginners and Advanced players are
+// never auto-suggested for the same match (Intermediate is the bridge: Beginner↔Intermediate and
+// Intermediate↔Advanced are both fine, same-skill matches are always fine), because it's not
+// usually a good game for either side. A queuing master can still deliberately match a Beginner
+// with an Advanced player manually (Assign buttons, drag-and-drop, fixed partners, or the Next
+// Game cards) — only the auto-suggestion logic below (`courtAllowsSkills`, used by
+// `courtSuggestions`/`getSuggestions`) enforces it; manual assignment paths no longer do.
 function courtAllowsSkills(courtPlayers,newSkills){
   const skills=new Set([...courtPlayers.map(p=>p.skill_level),...newSkills])
   return !(skills.has('beginner')&&skills.has('advanced'))
@@ -227,17 +229,18 @@ export function OpenPlayScreen(){
   function unpair(id){savePairs(pairs.filter(p=>!p.includes(id)))}
 
   // What's stopping `p` from being assigned to `court` right now, if anything — checked before
-  // every assign (button, drag) and used to disable/explain the Assign buttons in the UI. A
-  // fixed pair needs 2 open slots (they're never split across courts), and Beginner/Advanced can
-  // never end up together on the same court.
+  // every assign (button, drag) and used to disable/explain the Assign buttons in the UI. Only
+  // a hard capacity constraint blocks a MANUAL assignment (a fixed pair needs 2 open slots
+  // together, never split across courts) — the Beginner/Advanced skill rule is a recommendation
+  // preference, not a hard rule here: `courtSuggestions`/`getSuggestions` never SUGGEST mixing
+  // them, but a queuing master who deliberately wants to match a Beginner with an Advanced
+  // player (manually, via these buttons, drag-and-drop, or the Next Game cards) is allowed to.
   function assignBlockReason(p,court){
     const cp=courts[court]
     const partnerId=partnerIdOf(p.id)
     const partner=partnerId?waiting.find(w=>w.id===partnerId):null
     const needed=partner?2:1
     if((4-cp.length)<needed)return partner?'Needs 2 open slots — fixed pair':'Court full'
-    const newSkills=partner?[p.skill_level,partner.skill_level]:[p.skill_level]
-    if(!courtAllowsSkills(cp,newSkills))return "Beginner & Advanced can't share a court"
     return null
   }
 
@@ -397,11 +400,10 @@ export function OpenPlayScreen(){
       setGameError(`${court} only has ${4-cp.length} open slot${4-cp.length!==1?'s':''} — this game needs ${finalList.length}${partnerNote}.`)
       return
     }
-    const newSkills=finalList.map(p=>p.skill_level)
-    if(!courtAllowsSkills(cp,newSkills)){
-      setGameError(`Can't assign — ${court} would end up with both a Beginner and an Advanced player.`)
-      return
-    }
+    // No skill-compatibility block here — a queuing master who built this game deliberately
+    // (e.g. manually pairing a Beginner with an Advanced player) is allowed to assign it as-is.
+    // The Beginner/Advanced rule only shapes what gets auto-RECOMMENDED into a slot, not what a
+    // staffer can manually assign once they've decided who's playing.
     setGameError(null)
     const key=court==='Court 1'?'court_1':'court_2'
     for(const p of finalList){await window.electronAPI.assignCourt(p.id,key)}
@@ -630,7 +632,7 @@ export function OpenPlayScreen(){
           <div className='lg:col-span-2 space-y-4'>
             <div className='bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-700'>
               <strong>Fair rotation:</strong> Tap C1/C2 (or drag, on a mouse) to assign a waiting player. Game stops only when YOU tap Done.
-              Beginners and Advanced players are never matched together, and fixed partners always join the same court as a team.
+              Suggestions avoid matching Beginners with Advanced players, but you can still assign that combo yourself if you want to. Fixed partners always join the same court as a team.
               Players who just won tend to get suggested onto courts with other recent winners (🏆), same for recent losers, so results stay competitive and matchups keep mixing up.
             </div>
             {['Court 1','Court 2'].map(court=>{
@@ -1015,9 +1017,9 @@ export function OpenPlayScreen(){
             <h3 className='text-sm font-medium text-dg mb-1'>Set fixed partner</h3>
             <p className='text-xs text-gray-500 mb-4'>{pairPickerFor.player_name} will always be assigned to a court together with their partner, as a team.</p>
             <div className='max-h-64 overflow-y-auto space-y-1 mb-4'>
-              {waiting.filter(w=>w.id!==pairPickerFor.id&&!partnerIdOf(w.id)&&skillPairOk(w.skill_level,pairPickerFor.skill_level)).length===0?(
-                <p className='text-xs text-gray-400 text-center py-3'>No other unpaired, skill-compatible players waiting</p>
-              ):waiting.filter(w=>w.id!==pairPickerFor.id&&!partnerIdOf(w.id)&&skillPairOk(w.skill_level,pairPickerFor.skill_level)).map(w=>(
+              {waiting.filter(w=>w.id!==pairPickerFor.id&&!partnerIdOf(w.id)).length===0?(
+                <p className='text-xs text-gray-400 text-center py-3'>No other unpaired players waiting</p>
+              ):waiting.filter(w=>w.id!==pairPickerFor.id&&!partnerIdOf(w.id)).map(w=>(
                 <button key={w.id} onClick={()=>makePair(pairPickerFor.id,w.id)} className='w-full flex items-center gap-2 p-2 rounded-lg border border-border hover:border-olive hover:bg-olive/5 text-left'>
                   <span className='text-xs font-medium text-dg flex-1'>{w.player_name}</span>
                   <span className={'text-xs px-1 border rounded '+SC[w.skill_level]}>{SS[w.skill_level]}</span>
