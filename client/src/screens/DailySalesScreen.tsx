@@ -220,7 +220,7 @@ export function DailySalesScreen() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-500">{fmtTime(t.created_at)}</span>
                       {t.customer_name && <span className="text-xs bg-surface px-1.5 py-0.5 rounded text-gray-600">{t.customer_name}</span>}
-                      {t.payment_status === 'unpaid' && <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">UNPAID</span>}
+                      {t.payment_status === 'unpaid' && <span className="text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full">UNPAID{t.debtor_name ? ` — ${t.debtor_name}` : ''}</span>}
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5 truncate">{(t.items || []).slice(0, 3).map((i: any) => i.item_name).join(', ')}{(t.items || []).length > 3 ? '...' : ''}</div>
                   </div>

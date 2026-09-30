@@ -141,6 +141,12 @@ export interface Transaction {
    *  was collected today, but the sale lands in the assigned date's reports instead of
    *  today's. Mutually exclusive with is_backdated (one custom date is either past or future). */
   is_advance_payment: boolean
+  /** Who still owes for this sale — required at checkout whenever payment_status is
+   *  'unpaid', so an unpaid sale is never just a dollar amount with no way to tell who to
+   *  follow up with. Plain free text, unrelated to the registered Member system
+   *  (customer_id/customer above) — captured even for a walk-in with no Member account.
+   *  Null for a sale that was paid immediately and never needed one. */
+  debtor_name?: string | null
 }
 
 export interface OpenPlayRegistration {
@@ -248,6 +254,9 @@ export interface CheckoutPayload {
    *  as picked in the browser's local clock. Omit to keep today's real time-of-day (the
    *  original backdate behavior, still fine when only the date matters). */
   transaction_time?: string
+  /** Who this sale is for — required server-side whenever payment_status is 'unpaid'
+   *  (rejected with a clear error otherwise), ignored/optional when paid. */
+  debtor_name?: string
 }
 
 export type WasteReason = 'spoiled' | 'expired' | 'damaged' | 'dropped' | 'other'

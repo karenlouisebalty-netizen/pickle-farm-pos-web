@@ -52,6 +52,9 @@ export function ReceiptScreen() {
             {txn.payment_status === 'unpaid' && (
               <div className="text-center font-bold text-[11px] border border-dashed border-gray-500 py-0.5 mb-1">*** NOT YET PAID ***</div>
             )}
+            {txn.payment_status === 'unpaid' && txn.debtor_name && (
+              <div className="text-center text-[10px] text-gray-600 mb-1">Owed by: {txn.debtor_name}</div>
+            )}
             {txn.is_backdated && (
               <div className="text-center text-[9px] text-gray-500 mb-1">(logged after the fact)</div>
             )}
@@ -130,6 +133,9 @@ export function ReceiptScreen() {
           )}
           {txn.payment_status === 'unpaid' && (
             <div className="flex justify-between"><span className="text-gray-500">Status</span><span className="font-bold text-orange-600">UNPAID</span></div>
+          )}
+          {txn.payment_status === 'unpaid' && txn.debtor_name && (
+            <div className="flex justify-between"><span className="text-gray-500">Owed by</span><span className="font-medium text-dg">{txn.debtor_name}</span></div>
           )}
         </div>
         {txn.payment_status === 'unpaid' && (

@@ -12,6 +12,9 @@ export function CheckoutScreen() {
   const { items, discount, total, subtotal, discountAmount, clearCart } = useCartStore()
   const [method, setMethod] = useState<PaymentMethod>('cash')
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('paid')
+  // Who still owes for this sale — required whenever it's marked Not Paid Yet, so an
+  // unpaid transaction is never just an amount with no way to tell who to follow up with.
+  const [debtorName, setDebtorName] = useState('')
   const [entered, setEntered] = useState('')
   const [processing, setProcessing] = useState(false)
   const [error, setError] = useState('')
@@ -79,6 +82,7 @@ export function CheckoutScreen() {
         payments:    [{ payment_method: method, amount: isUnpaid ? totalDue : (method === 'cash' ? tendered : totalDue), change_given: isUnpaid ? 0 : (method === 'cash' ? change : 0) }],
         discount:    { type: 'fixed', value: discountAmount(), reason: discount.reason },
         payment_status: paymentStatus,
+        ...(isUnpaid ? { debtor_name: debtorName.trim() } : {}),
         ...(isCustomDating ? { transaction_date: txnDate, transaction_time: txnTime } : {}),
       }
 
@@ -233,9 +237,22 @@ export function CheckoutScreen() {
             </button>
           </div>
           {isUnpaid && (
-            <p className="text-xs text-orange-600 mt-1.5">
-              This sale will still go through — items sold, stock deducted — but it's flagged unpaid until someone marks it paid later (Reports or Daily Sales).
-            </p>
+            <>
+              <p className="text-xs text-orange-600 mt-1.5">
+                This sale will still go through — items sold, stock deducted — but it's flagged unpaid until someone marks it paid later (Reports or Daily Sales).
+              </p>
+              <div className="mt-2">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Who Owes This?</p>
+                <input
+                  type="text"
+                  value={debtorName}
+                  onChange={e => setDebtorName(e.target.value)}
+                  placeholder="Customer name"
+                  className="w-full px-3 py-1.5 rounded-lg border border-orange-300 text-sm bg-white outline-none"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Required — so it's clear who to follow up with later.</p>
+              </div>
+            </>
           )}
 
           {/* Payment method */}
@@ -316,7 +333,7 @@ export function CheckoutScreen() {
 
           <button
             onClick={handleConfirm}
-            disabled={processing || (!isUnpaid && method === 'cash' && tendered < totalDue) || (isCustomDating && (!txnDate || !txnTime)) || !namesComplete}
+            disabled={processing || (!isUnpaid && method === 'cash' && tendered < totalDue) || (isCustomDating && (!txnDate || !txnTime)) || !namesComplete || (isUnpaid && !debtorName.trim())}
             className={`w-full py-3 rounded-xl text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-default active:scale-98 transition-all ${isUnpaid ? 'bg-orange-500 hover:bg-orange-600' : 'bg-dg hover:bg-dg-light'}`}
           >
             {processing ? 'Processing…' : isCustomDating ? (willBeAdvance ? `Log Advance Payment for ${txnDate}` : `Log Sale for ${txnDate}`) : isUnpaid ? 'Confirm Sale (Unpaid)' : 'Confirm & Print Receipt'}

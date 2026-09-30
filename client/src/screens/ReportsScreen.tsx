@@ -246,7 +246,7 @@ export function ReportsScreen(){
                       {t.customer_name&&<span className='text-xs bg-surface px-1.5 py-0.5 rounded text-gray-600'>{t.customer_name}</span>}
                       {t.status==='voided'&&<span className='text-[10px] font-medium bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full'>VOIDED</span>}
                       {t.status==='refunded'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>REFUNDED</span>}
-                      {t.status==='completed'&&t.payment_status==='unpaid'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>UNPAID</span>}
+                      {t.status==='completed'&&t.payment_status==='unpaid'&&<span className='text-[10px] font-medium bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full'>UNPAID{t.debtor_name?` — ${t.debtor_name}`:''}</span>}
                       {t.is_backdated&&<span className='text-[10px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full flex items-center gap-0.5'><i className='ti ti-history text-[10px]'/>logged</span>}
                       {t.is_advance_payment&&<span className='text-[10px] font-medium bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5'><i className='ti ti-calendar-time text-[10px]'/>advance</span>}
                     </div>
@@ -280,7 +280,7 @@ export function ReportsScreen(){
                         {t.discount_total>0&&<div className='text-gray-500'>Discount: <span className='font-medium text-maroon'>-{formatPeso(t.discount_total)}</span></div>}
                         {t.status==='completed'&&(
                           <div className='text-gray-500'>Status: {t.payment_status==='unpaid'
-                            ? <span className='font-medium text-orange-700'>Not paid yet</span>
+                            ? <span className='font-medium text-orange-700'>Not paid yet{t.debtor_name?` — owed by ${t.debtor_name}`:''}</span>
                             : <span className='font-medium text-green-700'>Paid{t.paid_by_name?` — confirmed by ${t.paid_by_name}`:''}</span>}
                           </div>
                         )}
