@@ -34,8 +34,8 @@ export const TransactionService = {
 
     const txnId = uuid()
     const liveNow = nowISO()
-    // A custom date (manager/owner only — enforced by the route, which strips these fields
-    // for any other role before it gets here) swaps in the date/time the person typed in, so
+    // A custom date (any role — owner, manager, or cashier) swaps in the date/time the
+    // person typed in, so
     // `date(created_at)` — what every report query buckets by — lands on that day instead of
     // today. A PAST moment backdates the sale (a forgotten entry); a FUTURE one makes it an
     // advance payment (money collected today for a sale that lands in that future date's

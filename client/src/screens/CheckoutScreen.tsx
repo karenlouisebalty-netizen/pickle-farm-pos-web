@@ -21,10 +21,9 @@ export function CheckoutScreen() {
   // Setting a different date/time for a sale — either backdating it (recording something
   // that already happened, under its real date, so it lands in that day's report instead of
   // today's) or logging an advance payment (money collected today for something happening
-  // on a future date, so it lands in THAT date's report instead of today's). Manager/owner
-  // only: a cashier freely shifting when a sale shows up in reports is exactly the kind of
-  // till-fiddling this should NOT make easy.
-  const canSetDate = session?.role === 'manager' || session?.role === 'owner'
+  // on a future date, so it lands in THAT date's report instead of today's). Open to every
+  // role — owner, manager, and cashier all have the same register trust already.
+  const canSetDate = !!session
   const [customDate, setCustomDate] = useState(false)
   const [txnDate, setTxnDate] = useState(todayString())
   const [txnTime, setTxnTime] = useState(() => new Date().toTimeString().slice(0, 5))

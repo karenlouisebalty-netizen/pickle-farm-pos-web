@@ -133,9 +133,9 @@ export interface Transaction {
    *  whoever marks it paid later. Null while unpaid. */
   paid_by?: string | null
   paid_by_name?: string
-  /** True when this sale's date was typed in by a manager/owner (a forgotten entry, or
-   *  recovering lost data) rather than captured live at checkout. Purely informational —
-   *  it still counts normally everywhere (revenue, stock, payment status). */
+  /** True when this sale's date was typed in at checkout (a forgotten entry, or
+   *  recovering lost data) rather than captured live — any role can set this. Purely
+   *  informational — it still counts normally everywhere (revenue, stock, payment status). */
   is_backdated: boolean
   /** True when this sale was assigned a FUTURE date/time — an advance payment. The money
    *  was collected today, but the sale lands in the assigned date's reports instead of
