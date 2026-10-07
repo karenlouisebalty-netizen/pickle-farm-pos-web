@@ -435,8 +435,13 @@ export function OpenPlayScreen(){
       return updated
     })
     saveMem()
-    setGameOverride(prev=>{const n=[...prev];n[gameIndex]=null;return n})
-    setGameCourt(prev=>{const n=[...prev];n[gameIndex]='';return n})
+    // Deploying a slot doesn't just clear it in place — every slot after it shifts up to fill
+    // the gap (Next Game 2 becomes Next Game 1, 3 becomes 2, etc.), same as a real queue, with
+    // a fresh auto-recommended slot appended at the end. This also carries forward any manual
+    // edits a staffer had already made to a later slot, instead of stranding them under a label
+    // that no longer matches what's actually up next.
+    setGameOverride(prev=>{const n=[...prev];n.splice(gameIndex,1);n.push(null);return n})
+    setGameCourt(prev=>{const n=[...prev];n.splice(gameIndex,1);n.push('');return n})
   }
 
   async function donePlayer(player){
