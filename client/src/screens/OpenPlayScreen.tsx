@@ -143,7 +143,7 @@ export function OpenPlayScreen(){
   const [showSkillPicker,setShowSkillPicker]=useState(false)
   const [tick,setTick]=useState(0)
   const [dragPlayer,setDragPlayer]=useState(null)
-  const [teams,setTeams]=useState({'Court 1':{t1:[],t2:[]},'Court 2':{t1:[],t2:[]}})
+  const [teams,setTeams]=useState(()=>{try{const s=localStorage.getItem('op_teams');return s?JSON.parse(s):{'Court 1':{t1:[],t2:[]},'Court 2':{t1:[],t2:[]}}}catch{return{'Court 1':{t1:[],t2:[]},'Court 2':{t1:[],t2:[]}}}})
   const [showTeamPicker,setShowTeamPicker]=useState(null)
   const [teamDrag,setTeamDrag]=useState(null)
   // "Next Game 1-4" planning queue — a staffer can override the auto-recommended lineup for
@@ -162,6 +162,18 @@ export function OpenPlayScreen(){
     timerRef.current=setInterval(()=>setTick(n=>n+1),30000)
     return ()=>clearInterval(timerRef.current)
   },[])
+
+  // Which 2 players are teamed up on each court (set automatically once a court fills to 4,
+  // or manually via Set Teams/Auto-balance) wasn't being saved anywhere — unlike players,
+  // courts, paused, and pairs, which all round-trip through localStorage. So navigating away
+  // from Open Play (e.g. to punch in/out, or over to POS for a sale) and back unmounted and
+  // remounted this screen with `teams` reset to empty, and a full court would silently drop
+  // back to its plain, un-teamed player list — looking like the names had changed or
+  // reshuffled, when really the team grouping was just lost. Persisting it the same way
+  // fixes that.
+  useEffect(()=>{
+    try{localStorage.setItem('op_teams',JSON.stringify(teams))}catch{}
+  },[teams])
 
   useEffect(()=>{
     if(!session)return
@@ -457,8 +469,8 @@ export function OpenPlayScreen(){
     mem.sessions.push({num:sessionNum,start:sessionStart,end:new Date().toISOString(),playerCount:players.length,players:players.map(p=>p.player_name),games:mem.history.filter(g=>g.sessionNum===sessionNum).length})
     mem.removed={};mem.lastFinished={};mem.recentOpponents={};mem.lastResult={};saveMem();saveMem()
     if(startNew){const next=sessionNum+1;mem.currentSession=next;setSessionNum(next);setSessionStart(new Date().toISOString())}
-    setPlayers([]);setCourts({'Court 1':[],'Court 2':[]});setPausedIds([]);setPairs([])
-    localStorage.setItem('op_players','[]');localStorage.setItem('op_courts',JSON.stringify({'Court 1':[],'Court 2':[]}));localStorage.setItem('op_paused','[]');localStorage.setItem('op_pairs','[]')
+    setPlayers([]);setCourts({'Court 1':[],'Court 2':[]});setPausedIds([]);setPairs([]);setTeams({'Court 1':{t1:[],t2:[]},'Court 2':{t1:[],t2:[]}})
+    localStorage.setItem('op_players','[]');localStorage.setItem('op_courts',JSON.stringify({'Court 1':[],'Court 2':[]}));localStorage.setItem('op_paused','[]');localStorage.setItem('op_pairs','[]');localStorage.setItem('op_teams',JSON.stringify({'Court 1':{t1:[],t2:[]},'Court 2':{t1:[],t2:[]}}))
     setRec(null);setConfirmReset(false);setConfirmNew(false);setShowSkillPicker(true)
   }
 

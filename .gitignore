@@ -8,3 +8,4 @@ data/
 *.db-shm
 .DS_Store
 *.timestamp-*.mjs
+_to_delete/
