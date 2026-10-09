@@ -15,12 +15,27 @@ function wr(s){const g=(s.wins||0)+(s.losses||0);return g?Math.round((s.wins||0)
 function fmtTime(iso){return new Date(iso).toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'})}
 function elapsed(iso){return iso?Math.floor((Date.now()-new Date(iso).getTime())/60000):0}
 
+// Deterministic (not re-randomized every render) nudge of up to +/-8s, used to break exact or
+// near-exact wait-time ties. Without this, every ranking below is a plain numeric sort, and JS's
+// stable sort always resolves a tie to the same original array order — so a group of players who
+// checked in (or finished a game) within moments of each other would rank identically forever and
+// always get suggested together, while everyone else never caught up. The jitter is derived from
+// the player's id plus their current wait-anchor timestamp (lastFinished, or check-in time before
+// they've played), so it holds steady — no flicker — for as long as they're actually waiting, and
+// only reshuffles the next time that timestamp changes, i.e. once they actually play again.
+function tieJitter(id,t){
+  let h=0
+  const s=String(id)+'|'+String(t)
+  for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0}
+  return ((h>>>0)/4294967295)*16000-8000
+}
+
 function suggestionPriority(p,stats,now){
   const t=mem.lastFinished[p.id]||new Date(p.check_in_at).getTime()
   const wait=now-t
   // Players with fewer total games get priority bonus
   const games=(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)+(stats[p.id]?.draws||0)
-  return wait-games*60000 // each game adds 1min penalty
+  return wait-games*60000+tieJitter(p.id,t) // each game adds 1min penalty; jitter breaks ties
 }
 
 function getSuggestions(waiting,stats,pairs){
@@ -226,7 +241,7 @@ export function OpenPlayScreen(){
     const _now=Date.now()
     const aL=mem.lastFinished[a.id]||new Date(a.check_in_at).getTime()
     const bL=mem.lastFinished[b.id]||new Date(b.check_in_at).getTime()
-    return(_now-bL)-(_now-aL)
+    return((_now-bL)+tieJitter(b.id,bL))-((_now-aL)+tieJitter(a.id,aL))
   })
   const allowedSkills=sessionSkill==='beginner'?['beginner']:sessionSkill==='intadv'?['intermediate','advanced']:['beginner','intermediate','advanced']
 
@@ -306,7 +321,7 @@ export function OpenPlayScreen(){
       },0)
       const candStatus=candidateWinnerStatus(p,partner)
       const winnerMismatch=(courtStatus&&candStatus&&candStatus!==courtStatus)?1:0
-      out.push({p,partner,needed,score:(wait-gamePenalty)-overlap*180000-winnerMismatch*240000})
+      out.push({p,partner,needed,score:(wait-gamePenalty)-overlap*180000-winnerMismatch*240000+tieJitter(p.id,readyAt)})
     }
     return out.sort((a,b)=>b.score-a.score)
   }
