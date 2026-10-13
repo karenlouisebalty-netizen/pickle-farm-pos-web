@@ -470,6 +470,15 @@ export function OpenPlayScreen(){
     setPausedIds(ids=>{const n=ids.filter(id=>id!==p.id);localStorage.setItem('op_paused',JSON.stringify(n));return n})
   }
 
+  // Corrects a player's skill level in place — deliberately NOT remove-then-re-register, which
+  // would create a brand new player id and lose everything tracked against the old one: win/
+  // loss stats, recent-opponent history, fixed-partner link, and wait-time (lastFinished).
+  async function changeSkill(p,newSkill){
+    if(newSkill===p.skill_level)return
+    await window.electronAPI.updateOpenPlaySkill(p.id,newSkill)
+    setPlayers(list=>{const n=list.map(x=>x.id===p.id?{...x,skill_level:newSkill}:x);localStorage.setItem('op_players',JSON.stringify(n));return n})
+  }
+
   function endSession(startNew){
     mem.sessions.push({num:sessionNum,start:sessionStart,end:new Date().toISOString(),playerCount:players.length,players:players.map(p=>p.player_name),games:mem.history.filter(g=>g.sessionNum===sessionNum).length})
     mem.removed={};mem.lastFinished={};mem.recentOpponents={};mem.lastResult={};saveMem();saveMem()
@@ -600,6 +609,7 @@ export function OpenPlayScreen(){
                 const isSug2=false
                 const partnerId=partnerIdOf(p.id)
                 const partnerName=partnerId?players.find(x=>x.id===partnerId)?.player_name:null
+                const skillOpts=allowedSkills.includes(p.skill_level)?allowedSkills:[p.skill_level,...allowedSkills]
                 return(
                   <div key={p.id} draggable onDragStart={()=>onDragStart(p)} className={'flex items-center gap-2 py-1.5 border-b border-border last:border-0 px-1 rounded-lg cursor-grab '+(isSug1?'bg-green-50':isSug2?'bg-blue-50':'')}>
                     <div className='w-5 h-5 rounded-full bg-surface text-xs flex items-center justify-center text-dg font-medium flex-shrink-0'>{i+1}</div>
@@ -611,7 +621,9 @@ export function OpenPlayScreen(){
                       </div>
                       <div className='text-xs text-gray-400'>{lastDone?'Rested '+ago(new Date(lastDone).toISOString()):'Joined '+ago(p.check_in_at)} · {gs} game{gs!==1?'s':''}</div>
                     </div>
-                    <span className={'text-xs px-1 py-0.5 rounded border mr-1 '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                    <select value={p.skill_level} onChange={e=>changeSkill(p,e.target.value)} onClick={e=>e.stopPropagation()} title='Change skill level' className={'text-xs px-1 py-0.5 rounded border mr-1 '+SC[p.skill_level]}>
+                      {skillOpts.map(s=><option key={s} value={s}>{SS[s]}</option>)}
+                    </select>
                     {mem.lastResult[p.id]==='win'&&<span title='Won their last game' className='text-xs px-1 py-0.5 rounded border mr-1 bg-emerald-50 text-emerald-700 border-emerald-200'>🏆 W</span>}
                     {mem.lastResult[p.id]==='loss'&&<span title='Lost their last game' className='text-xs px-1 py-0.5 rounded border mr-1 bg-gray-50 text-gray-500 border-gray-200'>L</span>}
                     {partnerId?(
@@ -633,21 +645,25 @@ export function OpenPlayScreen(){
                   Paused <span className='text-xs bg-gray-400 text-white px-2 py-0.5 rounded-full'>{pausedPlayers.length}</span>
                 </div>
                 <div className='text-xs text-gray-400 mb-2'>Set aside — won't be suggested or called for a court until resumed</div>
-                {pausedPlayers.map(p=>(
+                {pausedPlayers.map(p=>{
+                  const skillOpts=allowedSkills.includes(p.skill_level)?allowedSkills:[p.skill_level,...allowedSkills]
+                  return(
                   <div key={p.id} className='flex items-center gap-2 py-1.5 border-b border-border last:border-0 px-1'>
                     <div className='flex-1 min-w-0'>
                       <span className='text-xs font-medium text-dg truncate'>{p.player_name}</span>
                     </div>
-                    <span className={'text-xs px-1 py-0.5 rounded border mr-1 '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                    <select value={p.skill_level} onChange={e=>changeSkill(p,e.target.value)} title='Change skill level' className={'text-xs px-1 py-0.5 rounded border mr-1 '+SC[p.skill_level]}>
+                      {skillOpts.map(s=><option key={s} value={s}>{SS[s]}</option>)}
+                    </select>
                     <button onClick={()=>resumePlayer(p)} title='Resume — make them callable again' className='text-xs px-2 py-1 rounded-md bg-olive text-white font-medium flex items-center gap-1'><i className='ti ti-player-play'/>Resume</button>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </div>
           <div className='lg:col-span-2 space-y-4'>
             <div className='bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-700'>
-              <strong>Fair rotation:</strong> Tap C1/C2 (or drag, on a mouse) to assign a waiting player. Game stops only when YOU tap Done.
+              <strong>Fair rotation:</strong> Drag a waiting player onto a court (or a Next Game slot, on a mouse). Game stops only when YOU tap Done.
               Suggestions avoid matching Beginners with Advanced players, but you can still assign that combo yourself if you want to. Fixed partners always join the same court as a team.
               Players who just won tend to get suggested onto courts with other recent winners (🏆), same for recent losers, so results stay competitive and matchups keep mixing up.
             </div>

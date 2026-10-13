@@ -36,6 +36,20 @@ openPlayRoutes.post('/:id/checkout', requireAuth, (req, res) => {
   res.json({ success: true })
 })
 
+// Corrects a player's skill level in place (e.g. registered as the wrong tier by mistake) —
+// deliberately separate from re-registering them, which would create a brand new row (new id)
+// and silently lose everything the client's localStorage tracks by that id: win/loss stats,
+// recent-opponent history, fixed-partner link, and wait-time tracking.
+openPlayRoutes.post('/:id/skill', requireAuth, (req, res) => {
+  const db = getDb()
+  const { skill_level } = req.body as { skill_level: string }
+  if (!['beginner', 'intermediate', 'advanced'].includes(skill_level)) {
+    return res.status(400).json({ error: 'Invalid skill level' })
+  }
+  db.prepare('UPDATE open_play_registrations SET skill_level=? WHERE id=?').run(skill_level, req.params.id)
+  res.json({ success: true })
+})
+
 openPlayRoutes.get('/today', requireAuth, (req, res) => {
   const db = getDb()
   const branchId = String(req.query.branchId || '')

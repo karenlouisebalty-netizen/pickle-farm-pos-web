@@ -121,6 +121,7 @@ export const api = {
   registerOpenPlay:  (data: Omit<OpenPlayRegistration, 'id' | 'check_in_at'>) => request<OpenPlayRegistration>('POST', '/openplay/register', data),
   assignCourt:       (id: string, court: string) => request<void>('POST', `/openplay/${id}/assign`, { court }),
   checkOutPlayer:    (id: string)                => request<void>('POST', `/openplay/${id}/checkout`),
+  updateOpenPlaySkill: (id: string, skill_level: string) => request<void>('POST', `/openplay/${id}/skill`, { skill_level }),
   listOpenPlayToday: (branchId: string)          => request<OpenPlayRegistration[]>('GET', `/openplay/today${qs({ branchId })}`),
 
   // ── Members ──
