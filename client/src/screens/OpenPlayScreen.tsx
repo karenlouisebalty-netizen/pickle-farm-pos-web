@@ -382,10 +382,16 @@ export function OpenPlayScreen(){
   function addToGame(i,playerId){
     const current=gameOverride[i]?[...gameOverride[i]]:gameDisplay[i].map(p=>p.id)
     if(current.includes(playerId))return
+    // A player already sitting in a DIFFERENT "Next Game" slot can't also be added here — the
+    // "+ Add a waiting player…" dropdown already only offers players not in any slot
+    // (`gameAddCandidates`), but a drag can originate from the Waiting list, where someone
+    // already placed in a slot still appears (they haven't actually been assigned to a court
+    // yet) — this is what stops the same player from ending up double-booked across slots.
+    if(gameSlotIds.has(playerId))return
     if(current.length>=4)return
     let next=[...current,playerId]
     const partnerId=partnerIdOf(playerId)
-    if(partnerId&&!next.includes(partnerId)&&waiting.some(w=>w.id===partnerId)&&next.length<4){
+    if(partnerId&&!next.includes(partnerId)&&!gameSlotIds.has(partnerId)&&waiting.some(w=>w.id===partnerId)&&next.length<4){
       next=[...next,partnerId]
     }
     setGameOverride(prev=>{const n=[...prev];n[i]=next;return n})
@@ -473,10 +479,17 @@ export function OpenPlayScreen(){
   // Corrects a player's skill level in place — deliberately NOT remove-then-re-register, which
   // would create a brand new player id and lose everything tracked against the old one: win/
   // loss stats, recent-opponent history, fixed-partner link, and wait-time (lastFinished).
+  // A player's data lives in up to THREE separate bits of state at once — `players` (the master
+  // list), `courts` (a snapshot of whoever's currently on Court 1/2), and `teams` (a further
+  // snapshot of each court's Team 1/2 split) — so all three need patching, or a skill change
+  // made while someone's on a court silently wouldn't show up anywhere they're actually visible.
   async function changeSkill(p,newSkill){
     if(newSkill===p.skill_level)return
     await window.electronAPI.updateOpenPlaySkill(p.id,newSkill)
-    setPlayers(list=>{const n=list.map(x=>x.id===p.id?{...x,skill_level:newSkill}:x);localStorage.setItem('op_players',JSON.stringify(n));return n})
+    const patch=x=>x.id===p.id?{...x,skill_level:newSkill}:x
+    setPlayers(list=>{const n=list.map(patch);localStorage.setItem('op_players',JSON.stringify(n));return n})
+    setCourts(c=>{const n={'Court 1':c['Court 1'].map(patch),'Court 2':c['Court 2'].map(patch)};localStorage.setItem('op_courts',JSON.stringify(n));return n})
+    setTeams(t=>{const n={'Court 1':{t1:t['Court 1'].t1.map(patch),t2:t['Court 1'].t2.map(patch)},'Court 2':{t1:t['Court 2'].t1.map(patch),t2:t['Court 2'].t2.map(patch)}};localStorage.setItem('op_teams',JSON.stringify(n));return n})
   }
 
   function endSession(startNew){
@@ -703,31 +716,39 @@ export function OpenPlayScreen(){
                             {['t1','t2'].map((team,ti)=>(
                               <div key={team} className={'rounded-lg border p-2 '+(ti===0?'bg-green-50 border-green-200':'bg-blue-50 border-blue-200')}>
                                 <div className={'text-xs font-medium mb-1.5 '+(ti===0?'text-green-700':'text-blue-700')}>Team {ti+1}</div>
-                                {(courtTeams[team]||[]).map(p=>(
+                                {(courtTeams[team]||[]).map(p=>{
+                                  const skillOpts=allowedSkills.includes(p.skill_level)?allowedSkills:[p.skill_level,...allowedSkills]
+                                  return(
                                   <div key={p.id} className='flex items-center gap-1.5 mb-1 last:mb-0 p-1.5 bg-white rounded border border-border'>
                                     <span className='text-xs font-medium text-dg flex-1'>{p.player_name}</span>
-                                    <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                                    <select value={p.skill_level} onChange={e=>changeSkill(p,e.target.value)} title='Change skill level' className={'text-xs px-1 border rounded '+SC[p.skill_level]}>
+                                      {skillOpts.map(s=><option key={s} value={s}>{SS[s]}</option>)}
+                                    </select>
                                     <button onClick={()=>donePlayer(p)} className='text-xs px-2 py-0.5 rounded bg-olive text-white font-medium'>Done</button>
                                   </div>
-                                ))}
+                                )})}
                               </div>
                             ))}
                           </div>
                         ):(
                           <div>
                             <div className='text-xs font-medium text-gray-500 mb-1.5'>On court — tap Done to rotate back to queue</div>
-                            {cp.map(p=>(
+                            {cp.map(p=>{
+                              const skillOpts=allowedSkills.includes(p.skill_level)?allowedSkills:[p.skill_level,...allowedSkills]
+                              return(
                               <div key={p.id} className='flex items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-lg mb-1.5 last:mb-0'>
                                 <div className='flex-1'>
                                   <div className='flex items-center gap-1.5 flex-wrap'>
                                     <span className='text-xs font-medium text-dg'>{p.player_name}</span>
-                                    <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                                    <select value={p.skill_level} onChange={e=>changeSkill(p,e.target.value)} title='Change skill level' className={'text-xs px-1 border rounded '+SC[p.skill_level]}>
+                                      {skillOpts.map(s=><option key={s} value={s}>{SS[s]}</option>)}
+                                    </select>
                                     {stats[p.id]?.wins>0&&<span className='text-xs text-yellow-600 font-medium'>{stats[p.id].wins}W·{stats[p.id].losses}L</span>}
                                   </div>
                                 </div>
                                 <button onClick={()=>donePlayer(p)} className='text-xs px-3 py-1.5 rounded-lg bg-olive text-white font-medium whitespace-nowrap'>Done</button>
                               </div>
-                            ))}
+                            )})}
                           </div>
                         )}
                       </div>
@@ -928,10 +949,14 @@ export function OpenPlayScreen(){
                 return(
                 <div key={team} className={'rounded-lg border p-2 min-h-20 '+(ti===0?'bg-green-50 border-green-200':'bg-blue-50 border-blue-200')} onDragOver={onDragOver} onDrop={e=>onTeamDrop(e,showTeamPicker,team)}>
                   <div className={'text-xs font-medium mb-2 '+(ti===0?'text-green-700':'text-blue-700')}>Team {ti+1}</div>
-                  {(teams[showTeamPicker][team]||[]).map(p=>(
+                  {(teams[showTeamPicker][team]||[]).map(p=>{
+                    const skillOpts=allowedSkills.includes(p.skill_level)?allowedSkills:[p.skill_level,...allowedSkills]
+                    return(
                     <div key={p.id} draggable onDragStart={()=>onTeamDragStart(p,team)} className='flex items-center gap-1.5 p-1.5 bg-white rounded border border-border mb-1 last:mb-0 cursor-grab'>
                       <span className='text-xs font-medium text-dg flex-1'>{p.player_name}</span>
-                      <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
+                      <select value={p.skill_level} onChange={e=>changeSkill(p,e.target.value)} onClick={e=>e.stopPropagation()} title='Change skill level' className={'text-xs px-1 border rounded '+SC[p.skill_level]}>
+                        {skillOpts.map(s=><option key={s} value={s}>{SS[s]}</option>)}
+                      </select>
                       <button
                         onClick={()=>setTeams(t=>({...t,[showTeamPicker]:{...t[showTeamPicker],[team]:t[showTeamPicker][team].filter(x=>x.id!==p.id),[other]:[...t[showTeamPicker][other],p]}}))}
                         title={'Move to Team '+(other==='t1'?1:2)}
@@ -939,7 +964,7 @@ export function OpenPlayScreen(){
                         <i className='ti ti-arrows-left-right text-xs'/>
                       </button>
                     </div>
-                  ))}
+                  )})}
                 </div>
               )})}
             </div>
