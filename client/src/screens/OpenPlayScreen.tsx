@@ -619,12 +619,14 @@ export function OpenPlayScreen(){
                 const lastDone=mem.lastFinished[p.id]
                 const gs=(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)
                 const isSug1=gameDisplay[0].some(s=>s.id===p.id)
-                const isSug2=false
+                const isSug2=gameDisplay[1].some(s=>s.id===p.id)
+                const isSug3=gameDisplay[2].some(s=>s.id===p.id)
+                const isSug4=gameDisplay[3].some(s=>s.id===p.id)
                 const partnerId=partnerIdOf(p.id)
                 const partnerName=partnerId?players.find(x=>x.id===partnerId)?.player_name:null
                 const skillOpts=allowedSkills.includes(p.skill_level)?allowedSkills:[p.skill_level,...allowedSkills]
                 return(
-                  <div key={p.id} draggable onDragStart={()=>onDragStart(p)} className={'flex items-center gap-2 py-1.5 border-b border-border last:border-0 px-1 rounded-lg cursor-grab '+(isSug1?'bg-green-50':isSug2?'bg-blue-50':'')}>
+                  <div key={p.id} draggable onDragStart={()=>onDragStart(p)} className={'flex items-center gap-2 py-1.5 border-b border-border last:border-0 px-1 rounded-lg cursor-grab '+(isSug1?'bg-green-50':isSug2?'bg-yellow-50':isSug3?'bg-pink-50':isSug4?'bg-blue-50':'')}>
                     <div className='w-5 h-5 rounded-full bg-surface text-xs flex items-center justify-center text-dg font-medium flex-shrink-0'>{i+1}</div>
                     <div className='flex-1 min-w-0'>
                       <div className='flex items-center gap-1'>
