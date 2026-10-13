@@ -212,29 +212,14 @@ export function OpenPlayScreen(){
   const pausedPlayers=players.filter(p=>!onCourtIds.has(p.id)&&!mem.removed[p.id]&&pausedSet.has(p.id))
   const onCourt=courts['Court 1'].length+courts['Court 2'].length
   const suggestions=getSuggestions(waiting,stats,pairs)
-  // The 4 "Next Game" slots. A slot with an explicit override (`gameOverride[i]` is an array,
-  // not null) shows exactly those player ids — resolved back to live player objects, so anyone
-  // who's stopped waiting since (assigned elsewhere, paused, removed) just drops off the slot
-  // rather than showing stale data. A slot still on "auto" gets the next available recommended
-  // batch: `getSuggestions` is re-run on a pool that has every manually-reserved player (in ANY
-  // slot) removed first, then run again on whatever's left after each auto batch is drawn, so
-  // slots 2-4 recommend the players slot 1 (and any earlier auto slot) didn't already claim,
-  // and nobody manually placed in one slot is also suggested for another.
-  const manuallyReservedIds=new Set(gameOverride.flatMap(o=>o||[]))
-  let autoPool=waiting.filter(p=>!manuallyReservedIds.has(p.id))
-  const autoBatches=[]
-  for(let gi=0;gi<4;gi++){
-    if(gameOverride[gi])continue
-    const picks=getSuggestions(autoPool,stats,pairs)
-    autoBatches.push(picks)
-    const usedIds=new Set(picks.map(p=>p.id))
-    autoPool=autoPool.filter(p=>!usedIds.has(p.id))
-  }
-  let autoIdx=0
-  const gameDisplay=gameOverride.map(o=>{
-    if(o)return o.map(id=>waiting.find(w=>w.id===id)).filter(Boolean)
-    return autoBatches[autoIdx++]||[]
-  })
+  // The 4 "Next Game" slots are fully manual — there is no automatic recommendation here.
+  // Recommendations only ever appear in each court's own "Next up" box further down, where a
+  // staffer decides whether to act on one; building a "Next Game" slot is always a deliberate
+  // choice via the "+ Add a waiting player…" picker in its card. `gameOverride[i]` holds the
+  // ids placed in slot i (or null for an empty slot), resolved back to live player objects so
+  // anyone who's stopped waiting since (assigned elsewhere, paused, removed) just drops off
+  // the slot rather than showing stale data.
+  const gameDisplay=gameOverride.map(o=>(o||[]).map(id=>waiting.find(w=>w.id===id)).filter(Boolean))
   const gameSlotIds=new Set(gameDisplay.flat().map(p=>p.id))
   const gameAddCandidates=waiting.filter(p=>!gameSlotIds.has(p.id))
   const sortedWaiting=[...waiting].sort((a,b)=>{
@@ -528,6 +513,14 @@ export function OpenPlayScreen(){
     assign(dragPlayer,court)
     setDragPlayer(null)
   }
+  function onDropGame(e,gameIndex){
+    e.preventDefault()
+    if(!dragPlayer)return
+    if(onCourtIds.has(dragPlayer.id))return
+    if(gameDisplay[gameIndex].length>=4)return
+    addToGame(gameIndex,dragPlayer.id)
+    setDragPlayer(null)
+  }
   function onTeamDragStart(p,team){setTeamDrag({p,team})}
   function onTeamDrop(e,court,toTeam){
     e.preventDefault()
@@ -597,7 +590,7 @@ export function OpenPlayScreen(){
               <div className='text-sm font-medium text-dg mb-1 flex items-center justify-between'>
                 Waiting <span className='text-xs bg-dg text-white px-2 py-0.5 rounded-full'>{waiting.length}</span>
               </div>
-              <div className='text-xs text-gray-400 mb-2 flex items-center gap-1'><i className='ti ti-clock text-olive text-xs'/>Longest rest plays next · Tap C1/C2 to assign (or drag, on a mouse)</div>
+              <div className='text-xs text-gray-400 mb-2 flex items-center gap-1'><i className='ti ti-clock text-olive text-xs'/>Longest rest plays next · Drag to a court or a Next Game slot</div>
               {sortedWaiting.length===0?(
                 <p className='text-xs text-gray-400 text-center py-3'>No players waiting</p>
               ):sortedWaiting.map((p,i)=>{
@@ -607,8 +600,6 @@ export function OpenPlayScreen(){
                 const isSug2=false
                 const partnerId=partnerIdOf(p.id)
                 const partnerName=partnerId?players.find(x=>x.id===partnerId)?.player_name:null
-                const c1Reason=assignBlockReason(p,'Court 1')
-                const c2Reason=assignBlockReason(p,'Court 2')
                 return(
                   <div key={p.id} draggable onDragStart={()=>onDragStart(p)} className={'flex items-center gap-2 py-1.5 border-b border-border last:border-0 px-1 rounded-lg cursor-grab '+(isSug1?'bg-green-50':isSug2?'bg-blue-50':'')}>
                     <div className='w-5 h-5 rounded-full bg-surface text-xs flex items-center justify-center text-dg font-medium flex-shrink-0'>{i+1}</div>
@@ -630,13 +621,6 @@ export function OpenPlayScreen(){
                     ):(
                       <button onClick={()=>setPairPickerFor(p)} title='Set a fixed partner' className='text-gray-300 hover:text-purple-500 text-xs p-0.5 mr-1'><i className='ti ti-link'/></button>
                     )}
-                    {/* Tap-to-assign — HTML5 drag doesn't work via touch on iPad, so this is the primary way to assign on tablet. */}
-                    <div className='flex items-center gap-1 mr-1'>
-                      <button onClick={()=>assign(p,'Court 1')} disabled={!!c1Reason} title={c1Reason||'Assign to Court 1'}
-                        className='text-xs px-1.5 py-1 rounded-md bg-dg/10 text-dg font-medium hover:bg-dg/20 disabled:opacity-30 disabled:cursor-not-allowed'>C1</button>
-                      <button onClick={()=>assign(p,'Court 2')} disabled={!!c2Reason} title={c2Reason||'Assign to Court 2'}
-                        className='text-xs px-1.5 py-1 rounded-md bg-dg/10 text-dg font-medium hover:bg-dg/20 disabled:opacity-30 disabled:cursor-not-allowed'>C2</button>
-                    </div>
                     <button onClick={()=>pausePlayer(p)} title='Pause — skip calling them for a while' className='text-gray-300 hover:text-orange-400 text-xs p-0.5'><i className='ti ti-player-pause'/></button>
                     <button onClick={()=>setRemoving(p)} className='text-gray-300 hover:text-red-400 text-xs p-0.5'><i className='ti ti-x'/></button>
                   </div>
@@ -802,16 +786,13 @@ export function OpenPlayScreen(){
                 <div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
                   {[0,1,2,3].map(i=>{
                     const slot=gameDisplay[i]
-                    const isOverridden=!!gameOverride[i]
                     const roomLeft=4-slot.length
                     return(
-                      <div key={i} className='bg-white rounded-xl border border-border overflow-hidden'>
+                      <div key={i} onDragOver={onDragOver} onDrop={e=>onDropGame(e,i)} className='bg-white rounded-xl border border-border overflow-hidden'>
                         <div className='px-3 py-2 border-b border-border bg-surface flex items-center gap-2'>
                           <span className='text-sm font-medium text-dg'>Next Game {i+1}</span>
-                          {isOverridden?(
-                            <button onClick={()=>resetGame(i)} className='text-xs text-olive underline'>Reset to recommended</button>
-                          ):(
-                            <span className='text-xs text-gray-400'>Recommended</span>
+                          {slot.length>0&&(
+                            <button onClick={()=>resetGame(i)} className='text-xs text-olive underline'>Clear</button>
                           )}
                           <div className='flex-1'/>
                           <select value={gameCourt[i]} onChange={e=>{const v=e.target.value;setGameCourt(prev=>{const n=[...prev];n[i]=v;return n})}} className='text-xs border border-border rounded px-1.5 py-1'>
