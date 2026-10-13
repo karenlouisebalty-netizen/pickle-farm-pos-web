@@ -847,12 +847,16 @@ export function OpenPlayScreen(){
                           ):slot.map((p,idx)=>{
                             const partnerId=partnerIdOf(p.id)
                             const partner=partnerId?slot.find(sp=>sp.id===partnerId):null
+                            const lastDone=mem.lastFinished[p.id]
+                            const gs=(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)
                             return(
                               <div key={p.id} className='flex items-center gap-2 p-1.5 bg-white rounded border border-border mb-1 last:mb-0'>
                                 <div className='w-5 h-5 rounded-full bg-olive text-white text-xs flex items-center justify-center font-medium flex-shrink-0'>{idx+1}</div>
-                                <span className='text-xs font-medium text-dg flex-1'>{p.player_name}</span>
+                                <div className='flex-1 min-w-0'>
+                                  <span className='text-xs font-medium text-dg truncate block'>{p.player_name}</span>
+                                  <span className='text-xs text-gray-400'>{lastDone?'Rested '+ago(new Date(lastDone).toISOString()):'Joined '+ago(p.check_in_at)} · {gs} game{gs!==1?'s':''}</span>
+                                </div>
                                 <span className={'text-xs px-1 border rounded '+SC[p.skill_level]}>{SS[p.skill_level]}</span>
-                                {((stats[p.id]?.wins||0)+(stats[p.id]?.losses||0))>0&&<span className='text-xs text-yellow-600 font-medium'>{(stats[p.id]?.wins||0)+(stats[p.id]?.losses||0)}g</span>}
                                 {partner&&<span title={'Fixed pair with '+partner.player_name} className='text-xs px-1 rounded bg-purple-100 text-purple-700'><i className='ti ti-link text-xs'/></span>}
                                 <button onClick={()=>removeFromGame(i,p.id)} title='Remove from this slot' className='text-xs w-5 h-5 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500 flex items-center justify-center flex-shrink-0'>×</button>
                               </div>
