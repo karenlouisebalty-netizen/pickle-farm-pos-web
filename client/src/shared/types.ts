@@ -95,6 +95,11 @@ export interface TransactionItem {
   /** One name per unit of quantity, for Open Play / Court Rental lines. Stored as JSON in
    *  the DB; the server parses it back into a plain string array before sending it out. */
   customer_names?: string[]
+  /** One refresher flavor per unit of quantity, for an Open Play line whose product name
+   *  flags it as including the "Free Refreshers" promo (name contains "refresher", case-
+   *  insensitive — see isRefresherItem in shared/utils.ts). Stored as JSON in the DB, same
+   *  pattern as customer_names; null/absent for every other line. */
+  refresher_flavors?: string[]
 }
 
 export interface Payment {
@@ -227,6 +232,11 @@ export interface CartItem {
    *  (2x Open Play → 2 names) so there's a record of who played/booked even for a quick sale
    *  rung up straight from the product grid. Omitted/ignored for every other category. */
   customer_names?: string[]
+  /** One refresher flavor per unit of quantity, required at checkout when the item is
+   *  flagged by isRefresherItem() (an Open Play product whose name contains "refresher") —
+   *  prints on the claim stub alongside the matching customer_names entry for that unit.
+   *  Omitted/ignored for every other item. */
+  refresher_flavors?: string[]
 }
 
 export interface CartDiscount {

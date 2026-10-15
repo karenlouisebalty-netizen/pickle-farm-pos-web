@@ -45,3 +45,15 @@ export const EXPENSE_CATEGORIES = [
 
 export const RECEIPT_WIDTH = 32
 export const DEFAULT_LOW_STOCK_THRESHOLD = 5
+
+export const REFRESHER_FLAVORS = [
+  'Lemon',
+  'Passion Fruit',
+  'Melon',
+  'Mixed Berries',
+  'Blueberries',
+  'Strawberry',
+  'Green Apple',
+  'Mango',
+  'Lychee',
+] as const

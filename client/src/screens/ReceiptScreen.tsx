@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import type { Transaction } from '../shared/types'
 import { formatPeso, formatDate, formatTime } from '../shared/utils'
@@ -8,8 +9,25 @@ export function ReceiptScreen() {
   const txn: Transaction = state?.txn
 
   function handlePrint() {
+    document.body.classList.remove('print-stub')
     window.print()
   }
+
+  // Printing the Free Refresher stub reuses the browser's print dialog, same as the
+  // receipt itself, but needs to show a DIFFERENT element while the receipt stays hidden —
+  // toggled with a body class rather than the receipt's own #receipt-print id, so only one
+  // of the two print-CSS blocks below is ever active at a time. Cleared automatically once
+  // the print dialog closes (works for both "Print" and "Cancel"), as a safety net in case a
+  // later Print Receipt click reuses this same page view.
+  function handlePrintStub() {
+    document.body.classList.add('print-stub')
+    window.print()
+  }
+  useEffect(() => {
+    function clear() { document.body.classList.remove('print-stub') }
+    window.addEventListener('afterprint', clear)
+    return () => { window.removeEventListener('afterprint', clear); clear() }
+  }, [])
 
   if (!txn) {
     return (
@@ -26,13 +44,30 @@ export function ReceiptScreen() {
   const created = new Date(txn.created_at)
   const cashPayment = txn.payments.find(p => p.payment_method === 'cash')
 
+  // One {name, flavor} pair per unit of quantity, across every "Free Refreshers" line on
+  // this sale (there's normally just one such line, but a sale could ring up more than one
+  // product that includes the promo) — this is what the claim stub prints.
+  const refresherStubs = txn.items.flatMap(item =>
+    (item.refresher_flavors ?? []).map((flavor, i) => ({
+      name: item.customer_names?.[i] || 'Player',
+      flavor,
+    }))
+  )
+
   return (
     <div className="h-full bg-cream flex">
       <style>{`
         @media print {
-          body * { visibility: hidden; }
-          #receipt-print, #receipt-print * { visibility: visible; }
-          #receipt-print { position: fixed; top: 0; left: 0; width: 58mm; }
+          body:not(.print-stub) * { visibility: hidden; }
+          body:not(.print-stub) #receipt-print, body:not(.print-stub) #receipt-print * { visibility: visible; }
+          body:not(.print-stub) #receipt-print { position: fixed; top: 0; left: 0; width: 58mm; }
+
+          /* The stub is display:none on screen (inline style) — this rule forces it visible
+             and in-flow for printing specifically when body.print-stub is set, overriding
+             that inline style (needs !important since an inline style otherwise always wins). */
+          body.print-stub * { visibility: hidden; }
+          body.print-stub #refresher-stub-print { display: block !important; visibility: visible; position: fixed; top: 0; left: 0; width: 58mm; }
+          body.print-stub #refresher-stub-print * { visibility: visible; }
         }
       `}</style>
 
@@ -110,6 +145,30 @@ export function ReceiptScreen() {
         </div>
       </div>
 
+      {/* Printable claim stub — never shown on screen (display:none inline); the CSS above
+          forces it visible only while printing with body.print-stub set (by handlePrintStub
+          below). Kept OUTSIDE the print:hidden right panel — a display:none ancestor would
+          take this down with it no matter what this element's own print CSS says. The
+          on-screen summary inside the right panel is the preview people actually see. */}
+      <div id="refresher-stub-print" style={{ display: 'none', width: '220px' }}>
+        <div className="font-mono text-[11px] leading-relaxed text-gray-900 px-3 py-3 bg-white" style={{ wordBreak: 'break-word' }}>
+          <div className="text-center font-bold text-[13px] mb-0.5">THE PICKLE FARM</div>
+          <div className="text-center text-[9px] text-gray-500">9070 Binambangan St Brgy. 4</div>
+          <div className="text-center text-[9px] text-gray-500 mb-2">Indang, Cavite</div>
+          <div className="text-center font-bold text-[11px] border border-dashed border-gray-500 py-0.5 mb-1">*** FREE REFRESHER ***</div>
+          <div className="border-t border-dashed border-gray-400 my-1.5" />
+          {refresherStubs.map((s, i) => (
+            <div key={i} className="flex justify-between"><span>{s.name}</span><span className="font-bold">{s.flavor}</span></div>
+          ))}
+          <div className="border-t border-dashed border-gray-400 my-1.5" />
+          <div className="flex justify-between"><span>Receipt #:</span><span>{txn.receipt_number}</span></div>
+          <div className="flex justify-between"><span>Date:</span><span>{formatDate(created)}</span></div>
+          <div className="flex justify-between"><span>Time:</span><span>{formatTime(created)}</span></div>
+          <div className="text-center mt-2 text-[10px] text-gray-500">Claim anytime at the refreshers station</div>
+          <div className="text-center text-[9px] text-gray-300 mt-1">✂ - - - - - - - - - -</div>
+        </div>
+      </div>
+
       {/* Right: controls */}
       <div className="w-56 bg-white border-l border-border p-4 flex flex-col gap-3 print:hidden">
         <p className="text-xs font-medium text-dg">
@@ -147,6 +206,25 @@ export function ReceiptScreen() {
           <i className="ti ti-printer" />
           Print Receipt
         </button>
+
+        {refresherStubs.length > 0 && (
+          <div className="bg-surface rounded-lg p-3">
+            <p className="text-xs font-medium text-dg mb-2 flex items-center gap-1"><i className="ti ti-glass-full text-olive" /> Free Refresher{refresherStubs.length > 1 ? 's' : ''}</p>
+            <div className="space-y-1 mb-2">
+              {refresherStubs.map((s, i) => (
+                <div key={i} className="flex justify-between text-xs">
+                  <span className="text-gray-600">{s.name}</span>
+                  <span className="font-medium text-dg">{s.flavor}</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={handlePrintStub}
+              className="w-full py-2 bg-olive text-white text-xs font-medium rounded-lg hover:opacity-90 flex items-center justify-center gap-1.5">
+              <i className="ti ti-printer" />
+              Print Stub
+            </button>
+          </div>
+        )}
 
         <button onClick={() => navigate('/pos')}
           className="w-full py-2.5 bg-surface border border-border text-sm font-medium text-dg rounded-lg hover:bg-cream flex items-center justify-center gap-1.5">

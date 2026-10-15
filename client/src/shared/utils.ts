@@ -59,3 +59,11 @@ export function calcDiscount(subtotal: number, type: 'pct' | 'fixed', value: num
   if (type === 'pct') return Math.round(subtotal * value) / 100
   return Math.min(value, subtotal)
 }
+
+/** True when a cart/transaction line item is Open Play and its product name flags the
+ *  "Free Refreshers" promo (name contains "refresher", case-insensitive — e.g. "Open Play
+ *  W/ Free Refresher"). Checkout asks for a flavor per unit for these; the Receipt screen
+ *  prints a claim stub from them. */
+export function isRefresherItem(item: { category?: string; item_name: string }): boolean {
+  return item.category === 'open_play' && /refresher/i.test(item.item_name)
+}

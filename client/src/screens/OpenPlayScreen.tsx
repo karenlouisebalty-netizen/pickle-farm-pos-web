@@ -156,14 +156,6 @@ export function OpenPlayScreen(){
   const [sessionStart,setSessionStart]=useState(new Date().toISOString())
   const [sessionSkill,setSessionSkill]=useState('all')
   const [showSkillPicker,setShowSkillPicker]=useState(false)
-  // Free Refreshers promo — session-wide toggle (like sessionSkill). When on, registering a
-  // player asks for their refresher flavor and, after registration, shows a printable 58mm
-  // stub (name/flavor/date/time) matching ReceiptScreen.tsx's print pattern. Purely a UI
-  // convenience — no server-side record of redemptions is kept, same as pausedIds/pairs.
-  const [refresherMode,setRefresherMode]=useState(()=>{try{return localStorage.getItem('op_refresher_mode')==='1'}catch{return false}})
-  const [refresherFlavor,setRefresherFlavor]=useState('')
-  const [refresherStub,setRefresherStub]=useState(null) // {player_name,flavor,at} or null when no stub is being shown
-  function toggleRefresherMode(){setRefresherMode(v=>{const n=!v;try{localStorage.setItem('op_refresher_mode',n?'1':'0')}catch{};return n})}
   const [tick,setTick]=useState(0)
   const [dragPlayer,setDragPlayer]=useState(null)
   const [teams,setTeams]=useState(()=>{try{const s=localStorage.getItem('op_teams');return s?JSON.parse(s):{'Court 1':{t1:[],t2:[]},'Court 2':{t1:[],t2:[]}}}catch{return{'Court 1':{t1:[],t2:[]},'Court 2':{t1:[],t2:[]}}}})
@@ -322,14 +314,8 @@ export function OpenPlayScreen(){
   async function register(){
     if(!name.trim()||!session)return
     if(!allowedSkills.includes(skill))return
-    if(refresherMode&&!refresherFlavor.trim())return
     const r=await window.electronAPI.registerOpenPlay({branch_id:session.branch_id,player_name:name.trim(),skill_level:skill,play_date:new Date().toISOString().slice(0,10),court_assigned:undefined,transaction_id:undefined})
-    setPlayers(p=>{const n=[...p,r];localStorage.setItem('op_players',JSON.stringify(n));return n})
-    if(refresherMode){
-      setRefresherStub({player_name:name.trim(),flavor:refresherFlavor.trim(),at:new Date().toISOString()})
-      setRefresherFlavor('')
-    }
-    setName('')
+    setPlayers(p=>{const n=[...p,r];localStorage.setItem('op_players',JSON.stringify(n));return n});setName('')
   }
 
   async function assign(player,court){
@@ -620,17 +606,7 @@ export function OpenPlayScreen(){
                 })}
               </div>
               {!allowedSkills.includes(skill)&&<p className='text-xs text-orange-500 mb-2'>Not allowed in this session</p>}
-              <button onClick={toggleRefresherMode} className={'w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-medium mb-2 '+(refresherMode?'border-olive bg-olive/10 text-olive':'border-border text-gray-500')}>
-                <span>Free Refreshers promo</span>
-                <span className={'w-8 h-4.5 rounded-full relative transition-colors '+(refresherMode?'bg-olive':'bg-gray-300')}>
-                  <span className={'absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full transition-all '+(refresherMode?'left-4':'left-0.5')}/>
-                </span>
-              </button>
-              {refresherMode&&(
-                <input value={refresherFlavor} onChange={e=>setRefresherFlavor(e.target.value)} onKeyDown={e=>e.key==='Enter'&&register()} placeholder='Refresher flavor' className='w-full px-3 py-2 rounded-lg border border-border text-sm outline-none focus:border-olive mb-2'/>
-              )}
-              {refresherMode&&!refresherFlavor.trim()&&<p className='text-xs text-orange-500 mb-2'>Enter the refresher flavor before punching</p>}
-              <button onClick={register} disabled={!name.trim()||!allowedSkills.includes(skill)||(refresherMode&&!refresherFlavor.trim())} className='w-full py-2 bg-dg text-white text-sm font-medium rounded-lg disabled:opacity-40'>Add Player</button>
+              <button onClick={register} disabled={!name.trim()||!allowedSkills.includes(skill)} className='w-full py-2 bg-dg text-white text-sm font-medium rounded-lg disabled:opacity-40'>Add Player</button>
             </div>
             <div className='bg-white rounded-xl border border-border p-4'>
               <div className='text-sm font-medium text-dg mb-1 flex items-center justify-between'>
@@ -1035,38 +1011,6 @@ export function OpenPlayScreen(){
               ))}
             </div>
             <button onClick={()=>setShowSkillPicker(false)} className='w-full py-2 rounded-lg bg-dg text-white text-sm font-medium'>Confirm</button>
-          </div>
-        </div>
-      )}
-
-      {refresherStub&&(
-        <div className='fixed inset-0 bg-black/50 flex items-center justify-center z-50'>
-          <style>{`
-            @media print {
-              body * { visibility: hidden; }
-              #refresher-stub-print, #refresher-stub-print * { visibility: visible; }
-              #refresher-stub-print { position: fixed; top: 0; left: 0; width: 58mm; }
-            }
-          `}</style>
-          <div className='bg-white rounded-xl p-4 w-72 border border-border shadow-xl'>
-            <div className='print:hidden text-sm font-medium text-dg mb-3 text-center'>Free Refresher Stub</div>
-            <div id='refresher-stub-print' className='bg-gray-100 p-3 rounded shadow-inner print:bg-white print:p-0 print:shadow-none mx-auto' style={{width:'fit-content'}}>
-              <div className='bg-white font-mono text-[11px] leading-relaxed text-gray-900 px-3 py-3' style={{width:'220px',wordBreak:'break-word'}}>
-                <div className='text-center font-bold text-[13px] mb-0.5'>THE PICKLE FARM</div>
-                <div className='text-center text-[9px] text-gray-500'>9070 Binambangan St Brgy. 4</div>
-                <div className='text-center text-[9px] text-gray-500 mb-2'>Indang, Cavite</div>
-                <div className='text-center font-bold text-[11px] border border-dashed border-gray-500 py-0.5 mb-1'>*** FREE REFRESHER ***</div>
-                <div className='flex justify-between'><span>Player</span><span className='font-bold'>{refresherStub.player_name}</span></div>
-                <div className='flex justify-between'><span>Flavor</span><span className='font-bold'>{refresherStub.flavor}</span></div>
-                <div className='flex justify-between'><span>Date</span><span>{new Date(refresherStub.at).toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'})}</span></div>
-                <div className='flex justify-between'><span>Time</span><span>{fmtTime(refresherStub.at)}</span></div>
-                <div className='text-center text-[9px] text-gray-300 mt-1'>✂ - - - - - - - - - -</div>
-              </div>
-            </div>
-            <div className='print:hidden flex gap-2 mt-3'>
-              <button onClick={()=>window.print()} className='flex-1 py-2 bg-dg text-white text-sm font-medium rounded-lg flex items-center justify-center gap-1.5'><i className='ti ti-printer'/>Print Stub</button>
-              <button onClick={()=>setRefresherStub(null)} className='flex-1 py-2 bg-surface border border-border text-sm font-medium text-dg rounded-lg'>Done</button>
-            </div>
           </div>
         </div>
       )}

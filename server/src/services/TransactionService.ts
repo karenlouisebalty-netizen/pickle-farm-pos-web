@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid'
 import { getDb } from '../db/database'
-import { generateReceiptNumber, nowISO, calcDiscount } from '../shared/utils'
+import { generateReceiptNumber, nowISO, calcDiscount, isRefresherItem } from '../shared/utils'
 import type { Transaction, CheckoutPayload } from '../shared/types'
 
 /** transaction_items.customer_names is stored as a JSON string in SQLite — turn it back
@@ -8,12 +8,17 @@ import type { Transaction, CheckoutPayload } from '../shared/types'
 function parseItemNames(items: Transaction['items']): Transaction['items'] {
   return items.map(item => {
     const raw = (item as unknown as { customer_names?: unknown }).customer_names
-    if (typeof raw !== 'string') return item
-    try {
-      return { ...item, customer_names: JSON.parse(raw) }
-    } catch {
-      return { ...item, customer_names: undefined }
+    const rawFlavors = (item as unknown as { refresher_flavors?: unknown }).refresher_flavors
+    let out = item
+    if (typeof raw === 'string') {
+      try { out = { ...out, customer_names: JSON.parse(raw) } }
+      catch { out = { ...out, customer_names: undefined } }
     }
+    if (typeof rawFlavors === 'string') {
+      try { out = { ...out, refresher_flavors: JSON.parse(rawFlavors) } }
+      catch { out = { ...out, refresher_flavors: undefined } }
+    }
+    return out
   })
 }
 
@@ -86,6 +91,12 @@ export const TransactionService = {
           throw new Error(`Please provide ${item.quantity} name(s) for ${item.item_name}.`)
         }
       }
+      if (product && isRefresherItem({ category: product.category, item_name: item.item_name })) {
+        const flavors = (item.refresher_flavors ?? []).map(f => f.trim()).filter(Boolean)
+        if (flavors.length !== item.quantity) {
+          throw new Error(`Please provide a refresher flavor for each of the ${item.quantity} ${item.item_name}.`)
+        }
+      }
     }
 
     const doCreate = db.transaction(() => {
@@ -104,12 +115,15 @@ export const TransactionService = {
         const namesJson = item.customer_names && item.customer_names.length > 0
           ? JSON.stringify(item.customer_names.map(n => n.trim()).filter(Boolean))
           : null
+        const flavorsJson = item.refresher_flavors && item.refresher_flavors.length > 0
+          ? JSON.stringify(item.refresher_flavors.map(f => f.trim()).filter(Boolean))
+          : null
         db.prepare(`
           INSERT INTO transaction_items
-            (id, transaction_id, product_id, item_name, unit_price, quantity, discount, line_total, notes, customer_names)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, transaction_id, product_id, item_name, unit_price, quantity, discount, line_total, notes, customer_names, refresher_flavors)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(itemId, txnId, item.product_id ?? null, item.item_name,
-               item.unit_price, item.quantity, item.discount, lineTotal, item.notes ?? null, namesJson)
+               item.unit_price, item.quantity, item.discount, lineTotal, item.notes ?? null, namesJson, flavorsJson)
 
         if (item.product_id) {
           const product = db.prepare('SELECT stock_qty, track_inventory FROM products WHERE id = ?').get(item.product_id) as { stock_qty: number; track_inventory: number } | undefined

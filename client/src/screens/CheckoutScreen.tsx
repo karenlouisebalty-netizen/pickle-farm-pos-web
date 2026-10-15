@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCartStore } from '../stores/cartStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { formatPeso, todayString } from '../shared/utils'
-import { PAYMENT_METHODS } from '../shared/constants'
+import { formatPeso, todayString, isRefresherItem } from '../shared/utils'
+import { PAYMENT_METHODS, REFRESHER_FLAVORS } from '../shared/constants'
 import type { PaymentMethod, PaymentStatus, CheckoutPayload } from '../shared/types'
 
 export function CheckoutScreen() {
@@ -53,6 +53,24 @@ export function CheckoutScreen() {
   }
   const namesComplete = nameItems.every(i => namesFor(i.product_id, i.quantity).every(n => n.trim().length > 0))
 
+  // An Open Play line whose product is flagged for the "Free Refreshers" promo (name
+  // contains "refresher") needs one flavor per unit of quantity too — same one-per-unit
+  // pattern as names above, picked from a fixed list rather than typed free text.
+  const refresherItems = items.filter(isRefresherItem)
+  const [flavors, setFlavors] = useState<Record<string, string[]>>({})
+  function flavorsFor(productId: string, qty: number): string[] {
+    const existing = flavors[productId] ?? []
+    return Array.from({ length: qty }, (_, i) => existing[i] ?? '')
+  }
+  function setFlavor(productId: string, index: number, qty: number, value: string) {
+    setFlavors(prev => {
+      const arr = flavorsFor(productId, qty)
+      arr[index] = value
+      return { ...prev, [productId]: arr }
+    })
+  }
+  const flavorsComplete = refresherItems.every(i => flavorsFor(i.product_id, i.quantity).every(f => f.trim().length > 0))
+
   function press(key: string) {
     if (key === 'del') { setEntered(e => e.slice(0, -1)); return }
     if (entered.length >= 7) return
@@ -69,11 +87,15 @@ export function CheckoutScreen() {
       const payload: CheckoutPayload = {
         branch_id:   session.branch_id,
         cashier_id:  session.user_id,
-        items:       items.map(({ product_id, item_name, unit_price, quantity, discount: d, notes, category }) =>
+        items:       items.map(item =>
                        ({
-                         product_id, item_name, unit_price, quantity, discount: d, notes,
-                         ...((category === 'open_play' || category === 'court_rental')
-                           ? { customer_names: namesFor(product_id, quantity) }
+                         product_id: item.product_id, item_name: item.item_name, unit_price: item.unit_price,
+                         quantity: item.quantity, discount: item.discount, notes: item.notes,
+                         ...((item.category === 'open_play' || item.category === 'court_rental')
+                           ? { customer_names: namesFor(item.product_id, item.quantity) }
+                           : {}),
+                         ...(isRefresherItem(item)
+                           ? { refresher_flavors: flavorsFor(item.product_id, item.quantity) }
                            : {}),
                        })),
         // Unpaid sales still record the intended method and the full amount due — no cash
@@ -217,6 +239,33 @@ export function CheckoutScreen() {
             </div>
           )}
 
+          {/* Refresher flavors — required for the "Free Refreshers" promo, one per unit of quantity */}
+          {refresherItems.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                <i className="ti ti-glass-full text-olive" /> Refresher Flavors
+              </p>
+              {refresherItems.map(item => (
+                <div key={item.product_id} className="mb-2 last:mb-0">
+                  <p className="text-xs text-gray-500 mb-1">{item.item_name}{item.quantity > 1 && ` ×${item.quantity}`}</p>
+                  <div className="space-y-1.5">
+                    {flavorsFor(item.product_id, item.quantity).map((f, i) => (
+                      <select
+                        key={i}
+                        value={f}
+                        onChange={e => setFlavor(item.product_id, i, item.quantity, e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg border border-border text-sm bg-white outline-none"
+                      >
+                        <option value="" disabled>{item.quantity > 1 ? `Flavor ${i + 1}` : 'Select flavor'}</option>
+                        {REFRESHER_FLAVORS.map(fl => <option key={fl} value={fl}>{fl}</option>)}
+                      </select>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Paid or not */}
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mt-4 mb-2">Payment Status</p>
           <div className="grid grid-cols-2 gap-2">
@@ -332,7 +381,7 @@ export function CheckoutScreen() {
 
           <button
             onClick={handleConfirm}
-            disabled={processing || (!isUnpaid && method === 'cash' && tendered < totalDue) || (isCustomDating && (!txnDate || !txnTime)) || !namesComplete || (isUnpaid && !debtorName.trim())}
+            disabled={processing || (!isUnpaid && method === 'cash' && tendered < totalDue) || (isCustomDating && (!txnDate || !txnTime)) || !namesComplete || !flavorsComplete || (isUnpaid && !debtorName.trim())}
             className={`w-full py-3 rounded-xl text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-default active:scale-98 transition-all ${isUnpaid ? 'bg-orange-500 hover:bg-orange-600' : 'bg-dg hover:bg-dg-light'}`}
           >
             {processing ? 'Processing…' : isCustomDating ? (willBeAdvance ? `Log Advance Payment for ${txnDate}` : `Log Sale for ${txnDate}`) : isUnpaid ? 'Confirm Sale (Unpaid)' : 'Confirm & Print Receipt'}
