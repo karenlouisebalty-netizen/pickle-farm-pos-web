@@ -58,6 +58,12 @@ export function ReceiptScreen() {
     <div className="h-full bg-cream flex">
       <style>{`
         @media print {
+          /* Tells the browser this is a narrow receipt roll, not a normal 8.5x11 page — without
+             this, the print preview (and a "Save as PDF" destination) shows the 58mm content
+             sitting in the top-left corner of a full-size blank page. A real thermal printer's
+             own driver usually ignores this and just prints the narrow roll either way, but
+             this makes the preview/PDF match what actually prints. */
+          @page { size: 58mm auto; margin: 0; }
           body:not(.print-stub) * { visibility: hidden; }
           body:not(.print-stub) #receipt-print, body:not(.print-stub) #receipt-print * { visibility: visible; }
           body:not(.print-stub) #receipt-print { position: fixed; top: 0; left: 0; width: 58mm; }
